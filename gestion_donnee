@@ -1,16 +1,18 @@
 import yfinance as yf
-import os
+from pathlib import Path
 
 def telecharger_historique(ticker):
     """
     Télécharge l'historique d'une action et le sauvegarde en CSV
     directement dans le dossier courant du projet.
     """
-    # Le fichier s'appellera directement "AAPL.csv" ou "MSFT.csv"
-    chemin_fichier = f"{ticker}.csv"
 
-    print(f"Connexion à Yahoo Finance pour {ticker}...")
+    dossier = Path(__file__).parent 
+
+    chemin_fichier = dossier / f"{ticker}.csv"
+
     action = yf.Ticker(ticker)
+    print(f"Connexion à Yahoo Finance pour {ticker}...")
     
     # On récupère 2 ans d'historique
     df = action.history(period="2y") 
@@ -20,7 +22,7 @@ def telecharger_historique(ticker):
         print(f"Erreur : Aucune donnée trouvée pour {ticker}.")
         return False
 
-    # On sauvegarde directement ! Le fichier apparaîtra à côté de ton script.
+    # On sauvegarde directement !
     df.to_csv(chemin_fichier)
     print(f"Succès : Données de {ticker} sauvegardées sous le nom '{chemin_fichier}'")
     return True
