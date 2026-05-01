@@ -16,3 +16,9 @@ class Regression_Ridge:
         # Formule de la régression Ridge : theta = (X^T X + alpha*I)^-1 X^T y
         self.theta=np.linalg.inv(X_biais.T @ X_biais + self.alpha*I) @ X_biais.T @ y
         
+    def predict(self,X):
+        if self.theta is None:
+            raise ValueError("Le modèle n'est pas encore entraîné.")
+        
+        X_biais=np.column_stack([np.ones(X.shape[0]),X]) # Ajout de la colonne de biais
+        return X_biais @ self.theta
