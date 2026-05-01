@@ -1,0 +1,18 @@
+import numpy as np
+
+class Regression_Ridge:
+    #y=theta*X + alpha*||theta||^2
+    def __init__(self,alpha=1.0):
+        self.alpha = alpha
+        self.theta = None  # Coefficients du modèle
+    
+    def fit(self,X,y):
+        X_biais=np.column_stack([np.ones(X.shape[0]),X]) # Ajout de la colonne de biais
+        n_features=X_biais.shape[1]
+
+        I=np.eye(n_features)
+        I[0,0]=0 # On penalise pas le biais.
+
+        # Formule de la régression Ridge : theta = (X^T X + alpha*I)^-1 X^T y
+        self.theta=np.linalg.inv(X_biais.T @ X_biais + self.alpha*I) @ X_biais.T @ y
+        
