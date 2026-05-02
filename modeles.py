@@ -8,7 +8,7 @@ class ActifFinancier:
         self.ticker = ticker
         self.historique = None
         self.IA= None  
-        self.features_list = ['Dist_SMA', 'Dist_EMA', 'Volatilite_20j', 'RSI']
+        self.features_list = ['Dist_SMA', 'Dist_EMA', 'Volatilite_20j', 'RSI', 'Volume_zscore']
         self.mu = None
         self.sigma = None
 
@@ -53,19 +53,27 @@ class ActifFinancier:
             self.historique[nom_colonne] = self.historique['Close'].rolling(window=fenetre).mean()
             print(f"Indicateur ajouté pour {self.ticker} : {nom_colonne}")
 
-    def calculer_EMA(self, fenetre=20):
+    def calculer_EMA(self, fenetre=20, colonne='Close'):
         """
         Calcule la moyenne mobile exponentielle sur une fenêtre donnée.
         EMA = (Prix d'aujourd'hui * alpha) + (EMA d'hier * (1 - alpha)) avec alpha = 2 / (fenetre + 1)
         """
         if self.historique is not None: 
             alpha=2/(fenetre+1)  # Coefficient de lissage pour EMA
-            prix=self.historique['Close'].tolist()
-            ema=[prix[0]]  # Initialisation de l'EMA avec le premier prix
+            serie=self.historique[colonne].tolist()
+            ema=[serie[0]]  # Initialisation de l'EMA avec le premier prix
 
-            for i in range(1, len(prix)):
-                ema.append(prix[i] * alpha + ema[i-1] * (1 - alpha))
+            for i in range(1, len(serie)):
+                ema.append(serie[i] * alpha + ema[i-1] * (1 - alpha))
             self.historique[f"EMA_{fenetre}"] = ema
+
+    def calculer_macd(self, span_court=12, span_long=26, span_signal=9):
+        self.calculer_EMA(fenetre=span_court)   #  EMA_12
+        self.calculer_EMA(fenetre=span_long)    #  EMA_26
+        self.historique['MACD'] = self.historique['EMA_12'] - self.historique['EMA_26']
+        self.calculer_EMA(fenetre=span_signal, colonne='MACD')  # crée EMA_9 du MACD = signal
+        self.historique['MACD_signal'] = self.historique['EMA_9']
+        self.historique['MACD_hist']   = self.historique['MACD'] - self.historique['MACD_signal']
 
 
     def calculer_rendements(self):
@@ -87,22 +95,22 @@ class ActifFinancier:
                 print(f" Erreur : Il faut calculer les rendements avant la volatilité pour {self.ticker}.")
                 return
     
-        # --- ÉTAPE 1 : Écart-type quotidien (Moving Standard Deviation) ---
-        # Mesure de la dispersion des rendements autour de leur moyenne sur N jours.
-        sigma_quotidien = self.historique['Rendements'].rolling(window=fenetre).std()
-        
-        # --- ÉTAPE 2 : Variance quotidienne ---
-        variance_quotidienne = sigma_quotidien ** 2
-        
-        # --- ÉTAPE 3 : Variance annuelle ---
-        # On multiplie par 252 car les variances s'additionnent sur le temps (hypothèse IID : indépendants et identiquement distribués).
-        variance_annuelle = variance_quotidienne * 252
-        
-        # --- ÉTAPE 4 : Volatilité annuelle (Retour à l'écart-type) ---
-        nom_colonne = f"Volatilite_{fenetre}j"
-        self.historique[nom_colonne] = np.sqrt(variance_annuelle)
-        
-        print(f" Volatilité calculée pour {self.ticker} via la variance (Annualisation par racine de T).")
+            # --- ÉTAPE 1 : Écart-type quotidien (Moving Standard Deviation) ---
+            # Mesure de la dispersion des rendements autour de leur moyenne sur N jours.
+            sigma_quotidien = self.historique['Rendements'].rolling(window=fenetre).std()
+            
+            # --- ÉTAPE 2 : Variance quotidienne ---
+            variance_quotidienne = sigma_quotidien ** 2
+            
+            # --- ÉTAPE 3 : Variance annuelle ---
+            # On multiplie par 252 car les variances s'additionnent sur le temps (hypothèse IID : indépendants et identiquement distribués).
+            variance_annuelle = variance_quotidienne * 252
+            
+            # --- ÉTAPE 4 : Volatilité annuelle (Retour à l'écart-type) ---
+            nom_colonne = f"Volatilite_{fenetre}j"
+            self.historique[nom_colonne] = np.sqrt(variance_annuelle)
+            
+            print(f" Volatilité calculée pour {self.ticker} via la variance (Annualisation par racine de T).")
 
     def calculer_rsi(self, fenetre=14):
         """
@@ -124,6 +132,18 @@ class ActifFinancier:
             rs = moyenne_gains / moyenne_pertes
             self.historique['RSI'] = 100 - (100 / (1 + rs))
             print(f"Indicateur ajouté pour {self.ticker} : RSI ({fenetre} jours)")
+
+
+    def calculer_volume_zscore(self, fenetre=20):
+        """
+        Z-score du volume : mesure si le volume d'aujourd'hui est anormal.
+        Un Z-score > 2 signifie un volume très inhabituel (potentiel signal fort).
+        """
+        if self.historique is not None:
+            moyenne_vol = self.historique['Volume'].rolling(window=fenetre).mean()
+            std_vol     = self.historique['Volume'].rolling(window=fenetre).std()
+            self.historique['Volume_zscore'] = (self.historique['Volume'] - moyenne_vol) / std_vol
+            print(f"Indicateur ajouté pour {self.ticker} : Volume Z-score ({fenetre}j)")
     
     def preparer_donnees_IA(self):
             """
@@ -271,16 +291,16 @@ if __name__ == "__main__":
         action.calculer_moyenne_mobile(fenetre=20)  # Moyenne sur 1 mois
         action.calculer_moyenne_mobile(fenetre=50)  # Moyenne sur 2 mois et demi
         action.calculer_rendements()
-        action.calculer_EMA(fenetre=20)  # EMA sur 1 mois
+        action.calculer_EMA(fenetre=20,colonne='Close')  # EMA sur 1 mois
         action.calculer_volatilite_historique(fenetre=20)  # Volatilité sur 1 mois
         action.calculer_rsi(fenetre=14)  # RSI sur 2 semaines
+        action.calculer_macd()
+        action.calculer_volume_zscore(fenetre=20)  # Volume Z-score sur 1 mois
         
         print("\nAperçu des données avec les nouveaux indicateurs :")
-        print(action.historique[['Close', 'SMA_20', 'SMA_50', 'Rendements', 'EMA_20', 'Volatilite_20j', 'RSI']])
+        print(action.historique[['Close', 'SMA_20', 'SMA_50', 'Rendements', 'EMA_20', 'Volatilite_20j', 'RSI', 'MACD', 'MACD_signal', 'MACD_hist']].tail())
 
         action.trouver_meilleur_alpha()
         # 2. Entraînement de l'IA (va afficher les stats R2, MAE, Hit Ratio)
-
         action.entrainer_IA()
-        
         action.predire_demain()
