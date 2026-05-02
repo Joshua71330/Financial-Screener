@@ -1,11 +1,17 @@
 import pandas as pd
 from pathlib import Path 
 import numpy as np 
+from algos_IA import Regression_Ridge
 
 class ActifFinancier: 
     def __init__(self, ticker):
         self.ticker = ticker
         self.historique = None
+        self.IA= None  
+        self.features_list = ['Dist_SMA', 'Dist_EMA', 'Volatilite_20j', 'RSI']
+        self.mu = None
+        self.sigma = None
+
     
     def charger_donnees(self):
         """
@@ -119,60 +125,149 @@ class ActifFinancier:
             self.historique['RSI'] = 100 - (100 / (1 + rs))
             print(f"Indicateur ajouté pour {self.ticker} : RSI ({fenetre} jours)")
     
+    def preparer_donnees_IA(self):
+            """
+            Calcule les distances relatives, crée la Target (le futur) et nettoie le tableau.
+            """
+            if self.historique is None:
+                return None
+                
+            df = self.historique.copy()
+            
+            # 1. Création des distances relatives (normalisation des prix)
+            df['Dist_SMA'] = (df['Close'] - df['SMA_20']) / df['SMA_20']
+            df['Dist_EMA'] = (df['Close'] - df['EMA_20']) / df['EMA_20']
+            
+            # 2. La cible (Target) : On remonte le rendement de DEMAIN sur la ligne d'aujourd'hui
+            df['Target_Ret'] = df['Rendements'].shift(-1)
+            
+            # 3. Le coup de balai
+            colonnes_utiles = self.features_list + ['Target_Ret']
+            data_propre = df[colonnes_utiles].dropna()
+            
+            return data_propre
 
-    def entrainer_ia(self, alpha=1.0):
-        if self.historique is None: return
 
-        # 1. Préparation des données (Feature Engineering)
-        df = self.historique.copy()
-        df['Dist_SMA'] = (df['Close'] - df['SMA_20']) / df['SMA_20'] # Distance relative au SMA 20 jours
-        df['Dist_EMA'] = (df['Close'] - df['EMA_20']) / df['EMA_20'] # Distance relative à l'EMA 20 jours
-        df['Target_Ret'] = df['Rendements'].shift(-1) # Rendement du jour suivant comme cible (Objectif de prédiction de l'IA)
-        
-        features = ['Dist_SMA', 'Dist_EMA', 'Volatilite_20j', 'Rendements', 'RSI']
-        data = df[features + ['Target_Ret']].dropna()
-        
-        X = data[features].values
+    def trouver_meilleur_alpha(self):
+        """
+        Teste une grille de valeurs Alpha pour trouver celle qui 
+        maximise l'Accuracy Directionnelle (Hit Ratio) sur le Test Set.
+        """
+        data = self.preparer_donnees_IA()
+        if data is None or data.empty:
+            return
+            
+        X_brut = data[self.features_list].values
         y = data['Target_Ret'].values
-
-        # 2. STANDARDISATION MANUELLE (Crucial pour Ridge)
-        self.mu = X.mean(axis=0)
-        self.sigma = X.std(axis=0)
-        X_std = (X - self.mu) / self.sigma
-
-        # Ajouter une colonne de 1 pour l'Intercept (biais)
-        X_std = np.column_stack([np.ones(X_std.shape[0]), X_std])
-
-        # 3. L'ÉQUATION NORMALE DE RIDGE
-        # On ne pénalise pas le premier coefficient (l'intercept)
-        n_features = X_std.shape[1]
-        A = alpha * np.eye(n_features)
-        A[0, 0] = 0 
-
-        # Formule : (X.T @ X + alpha*I)^-1 @ X.T @ y
-        self.theta = np.linalg.inv(X_std.T @ X_std + A) @ X_std.T @ y
         
-        print(f" Modèle Ridge NumPy entraîné. Coefficients : {self.theta}")
+        # Split (80% passé, 20% futur)
+        split_idx = int(len(X_brut) * 0.8)
+        X_train_brut, X_test_brut = X_brut[:split_idx], X_brut[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
+        
+        # Standardisation stricte (calculée QUE sur le train)
+        mu_train = np.mean(X_train_brut, axis=0)
+        sigma_train = np.std(X_train_brut, axis=0)
+        X_train = (X_train_brut - mu_train) / sigma_train
+        X_test = (X_test_brut - mu_train) / sigma_train
+        
+        # --- GRILLE DE RECHERCHE (Grid Search) ---
+        alphas_a_tester = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+        
+        meilleur_alpha = None
+        meilleur_hit_ratio = 0.0
+        
+        print("\n=== DÉBUT DU GRID SEARCH POUR ALPHA ===")
+        for a in alphas_a_tester:
+            # 1. On crée une IA de test avec cet alpha
+            test_IA = Regression_Ridge(alpha=a)
+            
+            # 2. On l'entraîne
+            test_IA.fit(X_train, y_train)
+            
+            # 3. On calcule son Hit Ratio sur les données qu'elle ne connaît pas (Test)
+            y_pred = test_IA.predict(X_test)
+            hit_ratio = np.sum(np.sign(y_test) == np.sign(y_pred)) / len(y_test)
+            
+            print(f"Test Alpha = {a:8.3f} --> Hit Ratio = {hit_ratio*100:.2f} %")
+            
+            # 4. On sauvegarde le roi de la colline
+            if hit_ratio > meilleur_hit_ratio:
+                meilleur_hit_ratio = hit_ratio
+                meilleur_alpha = a
+                
+        print(f">>> Alpha optimal retenu = {meilleur_alpha} <<<")
+        
+        # On met à jour l'IA "officielle" de l'actif avec le paramètre gagnant
+        self.IA = Regression_Ridge(alpha=meilleur_alpha)
 
-    def predire_prochain_rendement(self, x_input):
+    
+    def entrainer_IA(self):
+        data = self.preparer_donnees_IA()
+        if data is None or data.empty:
+            print("Erreur : Pas de données pour entraîner l'IA.")
+            return
+            
+        X_brut = data[self.features_list].values
+        y = data['Target_Ret'].values
+        
+        # 1. On définit l'index de coupure (80% passé / 20% futur)
+        split_idx = int(len(X_brut) * 0.8)
+        
+        # 2. CALIBRAGE  : On calcule mu et sigma uniquement sur le passé
+        self.mu = np.mean(X_brut[:split_idx], axis=0)
+        self.sigma = np.std(X_brut[:split_idx], axis=0)
+        
+        # 3. On applique cette échelle à toutes les données
+        X_std = (X_brut - self.mu) / self.sigma
+        
+        # 4. On sépare maintenant en Train et Test
+        X_train, X_test = X_std[:split_idx], X_std[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
+        
+        # 5. Entraînement final avec l'Alpha optimal déjà trouvé
+        print(f"\n--- Entraînement final de l'IA pour {self.ticker} ---")
+        self.IA.fit(X_train, y_train)
+        
+        # 6. Évaluation sur les données de Test (les 20% que l'IA découvre)
+        self.IA.score(X_test, y_test)
+    
+    def predire_demain(self):
         """
-        x_input : liste des dernières valeurs [Dist_SMA, Dist_EMA, Vol, Rend, RSI]
+        Prend les données d'aujourd'hui pour prédire le rendement de demain.
         """
-        # 1. Standardisation avec les paramètres d'entraînement
-        x_std = (x_input - self.mu) / self.sigma
+        if self.mu is None or self.sigma is None:
+            print("Erreur : L'IA doit être entraînée avant de prédire.")
+            return
+            
+        df = self.historique.copy()
         
-        # 2. Ajout du 1 pour l'intercept
-        x_final = np.insert(x_std, 0, 1)
+        # On calcule les indicateurs d'aujourd'hui
+        df['Dist_SMA'] = (df['Close'] - df['SMA_20']) / df['SMA_20']
+        df['Dist_EMA'] = (df['Close'] - df['EMA_20']) / df['EMA_20']
         
-        # 3. Produit scalaire
-        return np.dot(x_final, self.theta)
+        # On isole la TOUTE DERNIÈRE LIGNE de notre tableau (les données du jour)
+        derniere_ligne = df[self.features_list].iloc[-1].values
+        
+        # On standardise ces données avec les paramètres mémorisés de l'entraînement
+        X_demain_std = (derniere_ligne - self.mu) / self.sigma
+        
+        # reshape(1, -1) : L'IA attend un "tableau" de lignes. On la force à voir 1 ligne.
+        X_demain_std = X_demain_std.reshape(1, -1)
+        
+        # On lance la prédiction
+        prediction = self.IA.predict(X_demain_std)[0]
+        
+        signe = "HAUSSE" if prediction > 0 else "BAISSE"
+        print(f"\n>>> PRÉDICTION POUR DEMAIN ({self.ticker}) : {prediction*100:.3f} % ({signe}) <<<")
+        
+        return prediction
     
 # --- TEST DU MODULE ---
 if __name__ == "__main__":
     action = ActifFinancier("AAPL")
     
     if action.charger_donnees():
-        # On appelle nos nouvelles méthodes !
         action.calculer_moyenne_mobile(fenetre=20)  # Moyenne sur 1 mois
         action.calculer_moyenne_mobile(fenetre=50)  # Moyenne sur 2 mois et demi
         action.calculer_rendements()
@@ -180,6 +275,12 @@ if __name__ == "__main__":
         action.calculer_volatilite_historique(fenetre=20)  # Volatilité sur 1 mois
         action.calculer_rsi(fenetre=14)  # RSI sur 2 semaines
         
-        # On affiche les 5 dernières lignes pour vérifier que les colonnes ont bien été ajoutées
         print("\nAperçu des données avec les nouveaux indicateurs :")
         print(action.historique[['Close', 'SMA_20', 'SMA_50', 'Rendements', 'EMA_20', 'Volatilite_20j', 'RSI']])
+
+        action.trouver_meilleur_alpha()
+        # 2. Entraînement de l'IA (va afficher les stats R2, MAE, Hit Ratio)
+
+        action.entrainer_IA()
+        
+        action.predire_demain()
