@@ -12,12 +12,10 @@ class ActifFinancier:
         self.mu = None
         self.sigma = None
 
-    
     def charger_donnees(self):
         """
         Cherche le fichier CSV correspondant au ticker et lit ses données.
         """
-        # On trouve dynamiquement le dossier actuel
         dossier = Path(__file__).parent 
         chemin_fichier = dossier / f"{self.ticker}.csv"
         
@@ -26,7 +24,7 @@ class ActifFinancier:
             print(f"Avez-vous bien lancé gestion_donnees.py pour {self.ticker} ?")
             return False
             
-        # --- LECTURE DE FICHIER (Figure imposée validée !) creation d'un DATAFRAME ---
+        # creation d'un DATAFRAME 
         self.historique = pd.read_csv(chemin_fichier, index_col="Date", parse_dates=True)
         
         print(f"Succès : {len(self.historique)} jours de cotation chargés pour {self.ticker}.")
@@ -46,10 +44,7 @@ class ActifFinancier:
         """
 
         if self.historique is not None:
-            # On crée un nom de colonne dynamique, ex: "SMA_20"
             nom_colonne = f"SMA_{fenetre}"
-            
-            # rolling(window) crée la fenêtre glissante, mean() calcule la moyenne
             self.historique[nom_colonne] = self.historique['Close'].rolling(window=fenetre).mean()
             print(f"Indicateur ajouté pour {self.ticker} : {nom_colonne}")
 
@@ -114,25 +109,40 @@ class ActifFinancier:
 
     def calculer_rsi(self, fenetre=14):
         """
-        Calcule le RSI (Momentum - Oscillateur 0 à 100).
+        Calcule le RSI avec une boucle manuelle type EMA (sans ewm de Pandas).
         """
         if self.historique is not None:
             # 1. Différence de prix par rapport à la veille
             delta = self.historique['Close'].diff()
             
-            # 2. On sépare les jours de hausse (gains) et de baisse (pertes)
-            gains = delta.clip(lower=0)
-            pertes = -delta.clip(upper=0)
+            # 2. On sépare les gains et les pertes
+            # On utilise fillna(0) pour que la première case (qui est vide) devienne un 0
+            gains = delta.clip(lower=0).fillna(0).tolist()
+            pertes = (-delta.clip(upper=0)).fillna(0).tolist()
             
-            # 3. Moyenne exponentielle des gains et des pertes (formule stricte de Wilder)
-            moyenne_gains = gains.ewm(alpha=1/fenetre, adjust=False).mean()
-            moyenne_pertes = pertes.ewm(alpha=1/fenetre, adjust=False).mean()
+            # Note : Pour le RSI (formule de Wilder), le vrai alpha est 1/fenetre. 
+            # (Si c'était un vrai EMA classique, ça serait 2/(fenetre+1))
+            alpha = 1 / fenetre
             
-            # 4. Calcul du ratio (Relative Strength) puis du RSI final
-            rs = moyenne_gains / moyenne_pertes
+            moyenne_gains = [gains[0]]
+            moyenne_pertes = [pertes[0]]
+            
+            for i in range(1, len(gains)):
+                mg = gains[i] * alpha + moyenne_gains[i-1] * (1 - alpha)
+                moyenne_gains.append(mg)
+                
+                mp = pertes[i] * alpha + moyenne_pertes[i-1] * (1 - alpha)
+                moyenne_pertes.append(mp)
+            
+            # 4. On reconvertit nos listes en colonnes Pandas pour le calcul final
+            mg_series = pd.Series(moyenne_gains, index=self.historique.index)
+            mp_series = pd.Series(moyenne_pertes, index=self.historique.index)
+            
+            # 5. Calcul du ratio et du RSI final
+            rs = mg_series / mp_series
             self.historique['RSI'] = 100 - (100 / (1 + rs))
+            
             print(f"Indicateur ajouté pour {self.ticker} : RSI ({fenetre} jours)")
-
 
     def calculer_volume_zscore(self, fenetre=20):
         """
@@ -253,9 +263,7 @@ class ActifFinancier:
         self.IA.score(X_test, y_test)
     
     def predire_demain(self):
-        """
-        Prend les données d'aujourd'hui pour prédire le rendement de demain.
-        """
+
         if self.mu is None or self.sigma is None:
             print("Erreur : L'IA doit être entraînée avant de prédire.")
             return
@@ -269,7 +277,6 @@ class ActifFinancier:
         # On isole la TOUTE DERNIÈRE LIGNE de notre tableau (les données du jour)
         derniere_ligne = df[self.features_list].iloc[-1].values
         
-        # On standardise ces données avec les paramètres mémorisés de l'entraînement
         X_demain_std = (derniere_ligne - self.mu) / self.sigma
         
         # reshape(1, -1) : L'IA attend un "tableau" de lignes. On la force à voir 1 ligne.
@@ -279,7 +286,7 @@ class ActifFinancier:
         prediction = self.IA.predict(X_demain_std)[0]
         
         signe = "HAUSSE" if prediction > 0 else "BAISSE"
-        print(f"\n>>> PRÉDICTION POUR DEMAIN ({self.ticker}) : {prediction*100:.3f} % ({signe}) <<<")
+        print(f"\n PRÉDICTION POUR DEMAIN ({self.ticker}) : Potentielle {signe}")
         
         return prediction
     
