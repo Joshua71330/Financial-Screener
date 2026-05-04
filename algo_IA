@@ -2,7 +2,7 @@ import numpy as np
 
 class Regression_Ridge:
     #y=theta*X + alpha*||theta||^2
-    def __init__(self,alpha=1.0):
+    def __init__(self,alpha):
         self.alpha = alpha
         self.theta = None  # Coefficients du modèle
     
@@ -22,3 +22,35 @@ class Regression_Ridge:
         
         X_biais=np.column_stack([np.ones(X.shape[0]),X]) # Ajout de la colonne de biais
         return X_biais @ self.theta
+    
+
+    def score(self, X, y_vrai):
+        """
+        Calcule et affiche les performances du modèle.
+        """
+        y_pred = self.predict(X)
+        
+        # 1. Calcul du R2
+        ss_res = np.sum((y_vrai - y_pred) ** 2) # Somme des erreurs au carré
+        ss_tot = np.sum((y_vrai - np.mean(y_vrai)) ** 2) # Variance totale
+        r2 = 1 - (ss_res / ss_tot)
+        
+        # 2. Calcul de la MAE
+        mae = np.mean(np.abs(y_vrai - y_pred))
+        
+        # 3. Accuracy Directionnelle (Hit Ratio)
+        # On compare le signe de la prédiction avec le signe réel
+        signe_vrai = np.sign(y_vrai)
+        signe_pred = np.sign(y_pred)
+        # Les cas où les signes sont égaux (ignorer les zéros pour simplifier)
+        bonnes_directions = np.sum(signe_vrai == signe_pred)
+        hit_ratio = bonnes_directions / len(y_vrai)
+        
+        print("=== ÉVALUATION DE L'IA RIDGE ===")
+        print(f"R2 Score         : {r2:.4f} (Attention, normal qu'il soit proche de 0 en finance)")
+        print(f"MAE              : {mae:.4f} ({mae*100:.2f} % d'erreur moyenne)")
+        print(f"Hit Ratio (Signe): {hit_ratio*100:.2f} % de bonnes directions")
+        
+        return r2, mae, hit_ratio
+    
+   
