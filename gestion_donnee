@@ -17,18 +17,16 @@ def telecharger_historique(ticker):
     # On récupère 2 ans d'historique
     df = action.history(period="2y") 
 
-    # On vérifie qu'on a bien reçu quelque chose
     if df.empty:
         print(f"Erreur : Aucune donnée trouvée pour {ticker}.")
         return False
 
-    # On sauvegarde directement !
     df.to_csv(chemin_fichier)
     print(f"Succès : Données de {ticker} sauvegardées sous le nom '{chemin_fichier}'")
     return True
 
 # --- TEST DU MODULE ---
 if __name__ == "__main__":
-    print("--- Test du module de téléchargement ---")
+    print("--- Téléchargement des données ---")
     telecharger_historique("AAPL")
     telecharger_historique("MSFT")
