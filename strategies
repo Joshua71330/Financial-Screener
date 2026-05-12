@@ -1,0 +1,319 @@
+"""
+strategies.py — Stratégies de trading algorithmique.
+
+Hiérarchie :
+    Strategie (ABC)
+    ├── StrategieCroisementMA  (croisement de moyennes mobiles)
+    ├── StrategieRSI           (zones de survente / surachat)
+    └── StrategieMACD          (croisement MACD / ligne signal)
+
+Satisfait la figure imposée 3 (héritage entre types créés).
+"""
+
+from abc import ABC, abstractmethod
+import numpy as np
+import pandas as pd
+
+
+# ─────────────────────────────────────────────
+#  CLASSE ABSTRAITE DE BASE
+# ─────────────────────────────────────────────
+
+class Strategie(ABC):
+    """
+    Contrat commun à toutes les stratégies.
+    Chaque sous-classe doit implémenter :
+      - generer_signaux(df)  → retourne un DataFrame avec colonne 'Signal'
+      - decrire()            → retourne une chaîne descriptive
+    La méthode calculer_performance() est héritée et commune à toutes.
+    """
+
+    def __init__(self, nom: str):
+        self.nom = nom
+        self.signaux: pd.DataFrame | None = None  # rempli par generer_signaux()
+
+    # ── interface obligatoire ──────────────────
+
+    @abstractmethod
+    def generer_signaux(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Parcourt l'historique et produit des signaux :
+            +1  → signal d'achat
+            -1  → signal de vente
+             0  → neutre (aucun ordre)
+        Stocke le résultat dans self.signaux et le retourne.
+        """
+        pass
+
+    @abstractmethod
+    def decrire(self) -> str:
+        """Description courte de la logique de la stratégie."""
+        pass
+
+    # ── méthode commune héritée ───────────────
+
+    def calculer_performance(self, df: pd.DataFrame) -> dict:
+        """
+        Backteste la stratégie sur l'historique df.
+        Compare le rendement de la stratégie avec le Buy & Hold pur.
+
+        Retourne un dictionnaire avec :
+          - nom                   : nom de la stratégie
+          - performance_strategie : rendement total en %
+          - performance_buy_hold  : rendement B&H de référence en %
+          - nombre_trades         : nombre d'entrées en position
+        """
+        if self.signaux is None:
+            self.generer_signaux(df)
+
+        df_bt = df[['Close']].copy()
+        df_bt['Signal'] = self.signaux['Signal']
+
+        # Position maintenue jusqu'au prochain signal (long only)
+        df_bt['Position'] = (
+            df_bt['Signal']
+            .replace(0, np.nan)
+            .ffill()
+            .fillna(0)
+            .clip(lower=0)   # on ne vend pas à découvert
+        )
+
+        # Rendement journalier : on agit J+1 pour éviter le biais de look-ahead
+        df_bt['Rdt_Close']  = df_bt['Close'].pct_change()
+        df_bt['Rdt_Strat']  = df_bt['Position'].shift(1) * df_bt['Rdt_Close']
+
+        rdt_strat  = float((1 + df_bt['Rdt_Strat'].dropna()).cumprod().iloc[-1] - 1)
+        rdt_bh     = float(df_bt['Close'].iloc[-1] / df_bt['Close'].iloc[0] - 1)
+        nb_trades  = int((df_bt['Signal'] == 1).sum())
+
+        return {
+            'nom':                    self.nom,
+            'performance_strategie':  round(rdt_strat * 100, 2),
+            'performance_buy_hold':   round(rdt_bh    * 100, 2),
+            'nombre_trades':          nb_trades,
+        }
+
+
+# ─────────────────────────────────────────────
+#  STRATÉGIE 1 — CROISEMENT DE MOYENNES MOBILES
+# ─────────────────────────────────────────────
+
+class StrategieCroisementMA(Strategie):
+    """
+    Golden Cross / Death Cross.
+
+    Achat  : la MA courte croise la MA longue par le bas  → tendance haussière.
+    Vente  : la MA courte croise la MA longue par le haut → tendance baissière.
+
+    Paramètres :
+        fenetre_courte (int) : période de la MA rapide (défaut 20j)
+        fenetre_longue (int) : période de la MA lente  (défaut 50j)
+    """
+
+    def __init__(self, fenetre_courte: int = 20, fenetre_longue: int = 50):
+        super().__init__(f"Croisement MA ({fenetre_courte}/{fenetre_longue})")
+        self.fenetre_courte = fenetre_courte
+        self.fenetre_longue = fenetre_longue
+
+    def generer_signaux(self, df: pd.DataFrame) -> pd.DataFrame:
+        df_s = df.copy()
+        col_c = f"SMA_{self.fenetre_courte}"
+        col_l = f"SMA_{self.fenetre_longue}"
+
+        # Calcul à la volée si les colonnes sont absentes
+        if col_c not in df_s.columns:
+            df_s[col_c] = df_s['Close'].rolling(self.fenetre_courte).mean()
+        if col_l not in df_s.columns:
+            df_s[col_l] = df_s['Close'].rolling(self.fenetre_longue).mean()
+
+        df_s['Signal'] = 0
+
+        # Croisement haussier (Golden Cross)
+        df_s.loc[
+            (df_s[col_c] >  df_s[col_l]) &
+            (df_s[col_c].shift(1) <= df_s[col_l].shift(1)),
+            'Signal'
+        ] = 1
+
+        # Croisement baissier (Death Cross)
+        df_s.loc[
+            (df_s[col_c] <  df_s[col_l]) &
+            (df_s[col_c].shift(1) >= df_s[col_l].shift(1)),
+            'Signal'
+        ] = -1
+
+        self.signaux = df_s[['Signal']]
+        return self.signaux
+
+    def decrire(self) -> str:
+        return (
+            f"[{self.nom}] Achat sur Golden Cross "
+            f"(SMA{self.fenetre_courte} franchit SMA{self.fenetre_longue} à la hausse), "
+            f"Vente sur Death Cross (franchissement à la baisse)."
+        )
+
+
+# ─────────────────────────────────────────────
+#  STRATÉGIE 2 — RSI SURVENTE / SURACHAT
+# ─────────────────────────────────────────────
+
+class StrategieRSI(Strategie):
+    """
+    Mean-reversion sur RSI.
+
+    Achat  : le RSI repasse au-dessus de seuil_survente  (ex. 30) → rebond probable.
+    Vente  : le RSI repasse en-dessous de seuil_surachat (ex. 70) → correction probable.
+
+    Paramètres :
+        fenetre        (int) : période du RSI (défaut 14j)
+        seuil_survente (int) : seuil bas  (défaut 30)
+        seuil_surachat (int) : seuil haut (défaut 70)
+    """
+
+    def __init__(self, fenetre: int = 14, seuil_survente: int = 30, seuil_surachat: int = 70):
+        super().__init__(f"RSI ({seuil_survente}/{seuil_surachat})")
+        self.fenetre        = fenetre
+        self.seuil_survente = seuil_survente
+        self.seuil_surachat = seuil_surachat
+
+    # Fonction récursive (figure imposée optionnelle) ──────────────────────────
+    def _ema_wilder_recursif(self, valeurs: list, alpha: float, index: int) -> float:
+        """
+        Calcule la moyenne EMA de Wilder jusqu'à l'indice `index` par récursion.
+        Cas de base : premier élément = valeurs[0].
+        Récursion   : EMA(i) = valeurs[i] * alpha + EMA(i-1) * (1 - alpha)
+
+        Satisfait la figure imposée « Fonction récursive dans le cœur du projet ».
+        """
+        if index == 0:
+            return valeurs[0]
+        precedent = self._ema_wilder_recursif(valeurs, alpha, index - 1)
+        return valeurs[index] * alpha + precedent * (1 - alpha)
+
+    def _calculer_rsi(self, serie: pd.Series) -> pd.Series:
+        """Calcul du RSI avec lissage de Wilder via la méthode récursive."""
+        delta  = serie.diff()
+        gains  = delta.clip(lower=0).fillna(0).tolist()
+        pertes = (-delta.clip(upper=0)).fillna(0).tolist()
+        alpha  = 1 / self.fenetre
+        n      = len(gains)
+
+        # Appel récursif pour chaque point (coûteux sur longues séries → acceptable ici)
+        mg_vals = [self._ema_wilder_recursif(gains,  alpha, i) for i in range(n)]
+        mp_vals = [self._ema_wilder_recursif(pertes, alpha, i) for i in range(n)]
+
+        mg = pd.Series(mg_vals, index=serie.index)
+        mp = pd.Series(mp_vals, index=serie.index)
+
+        rs  = mg / mp.replace(0, np.nan)
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+
+    def generer_signaux(self, df: pd.DataFrame) -> pd.DataFrame:
+        df_s = df.copy()
+
+        # Réutilise la colonne RSI si déjà calculée dans l'ActifFinancier
+        rsi = df_s['RSI'] if 'RSI' in df_s.columns else self._calculer_rsi(df_s['Close'])
+
+        df_s['Signal'] = 0
+
+        # Sortie de survente (RSI repasse au-dessus du seuil bas)
+        df_s.loc[
+            (rsi >= self.seuil_survente) & (rsi.shift(1) < self.seuil_survente),
+            'Signal'
+        ] = 1
+
+        # Sortie de surachat (RSI repasse en-dessous du seuil haut)
+        df_s.loc[
+            (rsi <= self.seuil_surachat) & (rsi.shift(1) > self.seuil_surachat),
+            'Signal'
+        ] = -1
+
+        self.signaux = df_s[['Signal']]
+        return self.signaux
+
+    def decrire(self) -> str:
+        return (
+            f"[{self.nom}] Achat quand RSI remonte au-dessus de {self.seuil_survente} "
+            f"(sortie de survente), Vente quand RSI repasse sous {self.seuil_surachat} "
+            f"(sortie de surachat)."
+        )
+
+
+# ─────────────────────────────────────────────
+#  STRATÉGIE 3 — CROISEMENT MACD / SIGNAL
+# ─────────────────────────────────────────────
+
+class StrategieMACD(Strategie):
+    """
+    Stratégie momentum basée sur le MACD (12/26/9).
+
+    Achat  : la ligne MACD croise la ligne signal par le bas  (momentum haussier).
+    Vente  : la ligne MACD croise la ligne signal par le haut (momentum baissier).
+    """
+
+    def __init__(self):
+        super().__init__("MACD (12/26/9)")
+
+    def generer_signaux(self, df: pd.DataFrame) -> pd.DataFrame:
+        if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
+            print(
+                "  [StrategieMACD] Erreur : colonnes MACD / MACD_signal absentes. "
+                "Appelez calculer_macd() avant d'utiliser cette stratégie."
+            )
+            self.signaux = pd.DataFrame({'Signal': [0] * len(df)}, index=df.index)
+            return self.signaux
+
+        df_s = df.copy()
+        df_s['Signal'] = 0
+
+        # Croisement haussier : MACD passe au-dessus de sa ligne signal
+        df_s.loc[
+            (df_s['MACD'] >  df_s['MACD_signal']) &
+            (df_s['MACD'].shift(1) <= df_s['MACD_signal'].shift(1)),
+            'Signal'
+        ] = 1
+
+        # Croisement baissier : MACD passe en-dessous de sa ligne signal
+        df_s.loc[
+            (df_s['MACD'] <  df_s['MACD_signal']) &
+            (df_s['MACD'].shift(1) >= df_s['MACD_signal'].shift(1)),
+            'Signal'
+        ] = -1
+
+        self.signaux = df_s[['Signal']]
+        return self.signaux
+
+    def decrire(self) -> str:
+        return (
+            "[MACD (12/26/9)] Achat sur croisement haussier MACD/Signal "
+            "(momentum positif), Vente sur croisement baissier."
+        )
+
+
+# ─────────────────────────────────────────────
+#  TEST AUTONOME
+# ─────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import yfinance as yf
+
+    ticker = "AAPL"
+    print(f"=== Test des stratégies sur {ticker} ===\n")
+    df = yf.Ticker(ticker).history(period="2y")
+    df.index = df.index.tz_localize(None)
+
+    strategies = [
+        StrategieCroisementMA(20, 50),
+        StrategieRSI(14, 30, 70),
+        StrategieMACD(),
+    ]
+
+    for s in strategies:
+        print(s.decrire())
+        res = s.calculer_performance(df)
+        print(
+            f"  → Stratégie : {res['performance_strategie']:>7.2f}%  |  "
+            f"Buy & Hold : {res['performance_buy_hold']:>7.2f}%  |  "
+            f"Trades : {res['nombre_trades']}\n"
+        )
