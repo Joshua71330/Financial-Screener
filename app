@@ -1,3 +1,5 @@
+import pandas as pd
+
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -27,7 +29,24 @@ class DashboardCanvas(FigureCanvas):
         self.fig.subplots_adjust(hspace=0.1, bottom=0.1) 
         super(DashboardCanvas, self).__init__(self.fig)
         self.fig.canvas.mpl_connect('scroll_event', self.zoom_molette)
+        self.fig.canvas.mpl_connect('button_press_event', self.clic_presse)
+        self.fig.canvas.mpl_connect('button_release_event', self.clic_relache)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.mouvement_souris)
         
+        self.pan_axes = None
+        self.press_x = None
+        self.press_y = None
+        
+        # --- Variables pour le Tooltip (Survol) ---
+        self.df_courant = None # Va contenir le DataFrame
+        # Création d'une boîte de texte flottante, initialement invisible
+        self.tooltip = self.fig.text(0.0, 0.0, "", va="bottom", ha="left",
+                                     fontsize=8, 
+                                     bbox=dict(boxstyle="round,pad=0.2", fc="#f8f9fa", ec="#cccccc", alpha=0.9),
+                                     zorder=100, visible=False)
+
+
+
     def zoom_molette(self, event):
         # 1. On ignore si la souris n'est pas au-dessus d'un graphique (ex: dans les marges)
         if event.inaxes is None:
@@ -64,6 +83,130 @@ class DashboardCanvas(FigureCanvas):
 
         # 6. Redessiner le canevas de manière optimisée
         self.fig.canvas.draw_idle()
+
+    def clic_presse(self, event):
+            """Déclenché quand on clique sur le graphique."""
+            if event.button == 1 and event.inaxes is not None:
+                self.pan_axes = event.inaxes
+                
+                # On stocke les coordonnées en convertissant les pixels absolus de la fenêtre
+                # vers les unités mathématiques du graphique cliqué.
+                inv = self.pan_axes.transData.inverted()
+                self.press_x, self.press_y = inv.transform((event.x, event.y))
+
+    def clic_relache(self, event):
+        """Déclenché quand on relâche le clic."""
+        if event.button == 1:
+            self.pan_axes = None
+
+    def mouvement_souris(self, event):
+        """Gère le glissement (drag) ET l'affichage des valeurs au survol."""
+        
+        # ==========================================
+        # MODE 1 : DRAG (Si on maintient le clic)
+        # ==========================================
+        if self.pan_axes is not None:
+            if event.x is None or event.y is None: return
+            inv = self.pan_axes.transData.inverted()
+            x_data, y_data = inv.transform((event.x, event.y))
+            dx = x_data - self.press_x
+            dy = y_data - self.press_y
+            xlim = self.pan_axes.get_xlim()
+            ylim = self.pan_axes.get_ylim()
+            self.pan_axes.set_xlim(xlim[0] - dx, xlim[1] - dx)
+            self.pan_axes.set_ylim(ylim[0] - dy, ylim[1] - dy)
+            
+            # Cacher le tooltip pendant qu'on drag
+            if self.tooltip.get_visible(): self.tooltip.set_visible(False)
+            self.fig.canvas.draw_idle()
+            return
+
+        # ==========================================
+        # MODE 2 : SURVOL (Si on bouge sans cliquer)
+        # ==========================================
+        # Si la souris sort du graphique ou qu'on n'a pas encore de données : on cache la bulle
+        if event.inaxes is None or self.df_courant is None:
+            if self.tooltip.get_visible():
+                self.tooltip.set_visible(False)
+                self.fig.canvas.draw_idle()
+            return
+
+        ax = event.inaxes
+        
+        try:
+            # 1. Convertir la position de la souris (X) en date
+            date_souris = pd.to_datetime(mdates.num2date(event.xdata)).tz_localize(None)
+            
+            # 2. Trouver l'index de la date la plus proche dans le DataFrame
+            index_propre = self.df_courant.index.tz_localize(None)
+            idx = index_propre.get_indexer([date_souris], method='nearest')[0]
+            
+            # Récupérer la ligne de données et formater la vraie date
+            row = self.df_courant.iloc[idx]
+            date_reelle = self.df_courant.index[idx].strftime('%d %b %Y')
+            
+            # ---> CORRECTION : ON DÉFINIT L'INDEX DU GRAPHIQUE ICI <---
+            index_graphique = self.axes.tolist().index(ax)
+
+            # =========================================================
+            # CALCUL DE LA DISTANCE Y POUR CACHER LA BULLE
+            # =========================================================
+            y_courbe = None
+            if index_graphique == 0 and "Close" in row: y_courbe = row['Close']
+            elif index_graphique == 1 and "Volatilite_20j" in row: y_courbe = row['Volatilite_20j']
+            elif index_graphique == 2 and "MACD" in row: y_courbe = row['MACD']
+            elif index_graphique == 3 and "RSI" in row: y_courbe = row['RSI']
+
+            if y_courbe is not None:
+                # On récupère la hauteur totale de l'axe survolé
+                y_min, y_max = ax.get_ylim()
+                # On définit une zone d'accroche (5% de la hauteur du graphique)
+                tolerance = (y_max - y_min) * 0.05 
+                
+                # Si la souris est trop haute ou trop basse par rapport à la courbe
+                if abs(event.ydata - y_courbe) > tolerance:
+                    if self.tooltip.get_visible():
+                        self.tooltip.set_visible(False)
+                        self.fig.canvas.draw_idle()
+                    return # On arrête ici, on n'affiche pas la bulle
+            # =========================================================
+            
+            lignes = [f"{date_reelle}"]
+            
+            if index_graphique == 0:
+                lignes.append(f"Prix : {row['Close']:.2f} $")
+                if "SMA_20" in row: lignes.append(f"SMA 20 : {row['SMA_20']:.2f}")
+                if "EMA_20" in row: lignes.append(f"EMA 20 : {row['EMA_20']:.2f}")
+            elif index_graphique == 1:
+                if "Volatilite_20j" in row: lignes.append(f"Volatilité : {row['Volatilite_20j']:.4f}")
+            elif index_graphique == 2:
+                if "MACD" in row: lignes.append(f"MACD : {row['MACD']:.2f}")
+                if "MACD_signal" in row: lignes.append(f"Signal : {row['MACD_signal']:.2f}")
+            elif index_graphique == 3:
+                if "RSI" in row: lignes.append(f"RSI : {row['RSI']:.2f}")
+
+            # 4. Mettre à jour le texte
+            self.tooltip.set_text("\n".join(lignes))
+            
+            # 5. Positionner le Tooltip près du curseur (coordonnées relatives 0 à 1)
+            fig_w, fig_h = self.fig.get_size_inches() * self.fig.dpi
+            pos_x = (event.x + 15) / fig_w
+            pos_y = (event.y + 15) / fig_h
+            
+            # Repousser le tooltip s'il s'approche trop du bord droit ou haut
+            if pos_x > 0.8: pos_x = (event.x - 120) / fig_w
+            if pos_y > 0.8: pos_y = (event.y - 80) / fig_h
+                
+            self.tooltip.set_position((pos_x, pos_y))
+            self.tooltip.set_visible(True)
+            self.fig.canvas.draw_idle()
+            
+        except Exception as e:
+            # Petite astuce : pendant le développement, il vaut mieux afficher l'erreur 
+            # dans la console au lieu de 'pass', pour repérer ce genre de bugs plus vite !
+            # print(f"Erreur de tooltip : {e}")
+            pass
+
 
 
 
@@ -224,7 +367,11 @@ class ScreenerWindow(QMainWindow):
         action.calculer_macd()
 
         # On isole la dernière année de cotation (~252 jours)
-        df = action.historique.copy().tail(252)
+        df = action.historique.copy().tail(252*10)
+
+        # --> LIGNE À AJOUTER ICI <--
+        # On donne le DataFrame au canevas pour le système de survol
+        self.canvas.df_courant = df
 
         # Mise à jour du titre
         self.label_titre_dashboard.setText(f"Tableau de bord technique : {ticker}")
