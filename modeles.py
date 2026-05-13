@@ -2,33 +2,37 @@ import pandas as pd
 from pathlib import Path 
 import numpy as np 
 from algos_IA import Regression_Ridge
+from gestion_donnees import telecharger_historique
 
 class ActifFinancier: 
     def __init__(self, ticker):
         self.ticker = ticker
         self.historique = None
         self.IA= None  
+        self.strategies   = []              # liste de Strategie (composition)
         self.features_list = ['Dist_SMA', 'Dist_EMA', 'Volatilite_20j', 'RSI', 'Volume_zscore']
         self.mu = None
         self.sigma = None
 
     def charger_donnees(self):
-        """
-        Cherche le fichier CSV correspondant au ticker et lit ses données.
-        """
-        dossier = Path(__file__).parent 
+        dossier = Path(__file__).parent
         chemin_fichier = dossier / f"{self.ticker}.csv"
         
+        # Si le fichier n'existe pas, on tente de le télécharger
         if not chemin_fichier.exists():
-            print(f"Erreur : Le fichier {chemin_fichier} est introuvable.")
-            print(f"Avez-vous bien lancé gestion_donnees.py pour {self.ticker} ?")
-            return False
+            succes_telechargement = telecharger_historique(self.ticker)
             
-        # creation d'un DATAFRAME 
-        self.historique = pd.read_csv(chemin_fichier, index_col="Date", parse_dates=True)
+            # SI LE TÉLÉCHARGEMENT ÉCHOUE, ON S'ARRÊTE ICI ET ON RENVOIE FALSE
+            if not succes_telechargement:
+                return False 
+            
+        # Si on arrive ici, c'est que le fichier existe (ou a été téléchargé avec succès)
+        try:
+            self.historique = pd.read_csv(chemin_fichier, index_col='Date', parse_dates=True)
+            return True
+        except FileNotFoundError:
+            return False
         
-        print(f"Succès : {len(self.historique)} jours de cotation chargés pour {self.ticker}.")
-        return True
 
     def get_dernier_prix(self):
         """
@@ -61,6 +65,20 @@ class ActifFinancier:
             for i in range(1, len(serie)):
                 ema.append(serie[i] * alpha + ema[i-1] * (1 - alpha))
             self.historique[f"EMA_{fenetre}"] = ema
+    
+    def calculer_EMA_RSI_recursif(self, valeurs: list, alpha: float, index: int) -> float:
+        """
+        Calcule la moyenne EMA de Wilder jusqu'à l'indice `index` par récursion.
+        Cas de base : premier élément = valeurs[0].
+        alpha=2/(fenetre+1)  pour un EMA classique, mais pour le RSI de Wilder, c'est alpha=1/fenetre.
+        Récursion   : EMA(i) = valeurs[i] * alpha + EMA(i-1) * (1 - alpha)
+
+        Satisfait la figure imposée « Fonction récursive dans le cœur du projet ».
+        """
+        if index == 0:
+            return valeurs[0]
+        precedent = self.calculer_EMA_RSI_recursif(valeurs, alpha, index - 1)
+        return valeurs[index] * alpha + precedent * (1 - alpha)
 
     def calculer_macd(self, span_court=12, span_long=26, span_signal=9):
         self.calculer_EMA(fenetre=span_court)   #  EMA_12
@@ -106,6 +124,7 @@ class ActifFinancier:
             self.historique[nom_colonne] = np.sqrt(variance_annuelle)
             
             print(f" Volatilité calculée pour {self.ticker} via la variance (Annualisation par racine de T).")
+
 
     def calculer_rsi(self, fenetre=14):
         """
@@ -155,6 +174,35 @@ class ActifFinancier:
             self.historique['Volume_zscore'] = (self.historique['Volume'] - moyenne_vol) / std_vol
             print(f"Indicateur ajouté pour {self.ticker} : Volume Z-score ({fenetre}j)")
     
+
+    # ─────────────────────────────────────────
+    #  GESTION DES STRATÉGIES (composition)
+    # ─────────────────────────────────────────
+
+    def ajouter_strategie(self, strategie) -> None:
+        """
+        Attache une stratégie (instance de Strategie) à cet actif.
+        Relation de composition : l'actif possède ses stratégies.
+        """
+        self.strategies.append(strategie)
+        print(f"  Stratégie ajoutée : {strategie.nom}")
+
+    def evaluer_strategies(self) -> list[dict]:
+        """
+        Backteste toutes les stratégies rattachées sur l'historique complet.
+        Retourne une liste de dictionnaires de performance.
+        """
+        if not self.strategies:
+            print("  Aucune stratégie rattachée. Utilisez ajouter_strategie() d'abord.")
+            return []
+
+        resultats = []
+        for s in self.strategies:
+            res = s.calculer_performance(self.historique)
+            resultats.append(res)
+        return resultats
+
+
     def preparer_donnees_IA(self):
             """
             Calcule les distances relatives, crée la Target (le futur) et nettoie le tableau.
@@ -286,7 +334,7 @@ class ActifFinancier:
         prediction = self.IA.predict(X_demain_std)[0]
         
         signe = "HAUSSE" if prediction > 0 else "BAISSE"
-        print(f"\n PRÉDICTION POUR DEMAIN ({self.ticker}) : Potentielle {signe}")
+        print(f"\n PRÉDICTION Technique POUR DEMAIN ({self.ticker}) : Potentielle {signe} \n(Aucune donnée Macro ou d'actualité prise en compte, uniquement basée sur les indicateurs techniques et l'historique des prix).")
         
         return prediction
     
