@@ -1,1 +1,131 @@
+"""
+main.py — Point d'entrée en ligne de commande du screener.
+
+Enchaîne :
+  1. Téléchargement des données (gestion_donnees.py)
+  2. Calcul des indicateurs  (modeles.py → ActifFinancier)
+  3. Backtesting des stratégies (strategies.py)
+  4. Entraînement IA + prédiction directionnelle (algos_IA.py → Regression_Ridge)
+
+Lancer avec : python main.py
+"""
+
+from gestion_donnees import telecharger_historique
+from modeles import ActifFinancier
+from strategies import StrategieCroisementMA, StrategieRSI, StrategieMACD
+
+import sys
+from PyQt6.QtWidgets import QApplication
+from screener_gui import ScreenerWindow  # Remplace 'interface' par le nom du fichier où tu as mis ton code GUI
+
+
+# ─────────────────────────────────────────────
+#  AFFICHAGE
+# ─────────────────────────────────────────────
+
+def _banniere():
+    print("\n" + "═" * 54)
+    print("        SCREENER IA — Mode Terminal")
+    print("═" * 54)
+
+
+def _section(titre: str):
+    print(f"\n{'─' * 54}")
+    print(f"  {titre}")
+    print("─" * 54)
+
+
+# ─────────────────────────────────────────────
+#  LOGIQUE PRINCIPALE
+# ─────────────────────────────────────────────
+
+def analyser(ticker: str) -> None:
+    """
+    Effectue l'analyse complète pour un ticker donné :
+    téléchargement, indicateurs, stratégies, prédiction IA.
+    """
+
+    # ── 1. Données ────────────────────────────────────────────
+    _section(f"[1/4] Données — {ticker}")
+    succes = telecharger_historique(ticker)
+    if not succes:
+        print(f"  Impossible de récupérer les données pour '{ticker}'.")
+        print("  Vérifiez votre connexion internet et l'exactitude du ticker.")
+        return
+
+    actif = ActifFinancier(ticker)
+    if not actif.charger_donnees():
+        return
+
+    # ── 2. Indicateurs techniques ─────────────────────────────
+    _section("[2/4] Calcul des indicateurs techniques")
+    actif.calculer_moyenne_mobile(fenetre=20)
+    actif.calculer_moyenne_mobile(fenetre=50)
+    actif.calculer_EMA(fenetre=20)
+    actif.calculer_rendements()
+    actif.calculer_volatilite_historique(fenetre=20)
+    actif.calculer_rsi(fenetre=14)
+    actif.calculer_macd()
+    actif.calculer_volume_zscore(fenetre=20)
+
+    # ── 3. Backtesting des stratégies ────────────────────────
+    _section("[3/4] Backtesting des stratégies")
+    strategies = [
+        StrategieCroisementMA(fenetre_courte=20, fenetre_longue=50),
+        StrategieRSI(fenetre=14, seuil_survente=30, seuil_surachat=70),
+        StrategieMACD(),
+    ]
+
+    for s in strategies:
+        actif.ajouter_strategie(s)
+
+    resultats = actif.evaluer_strategies()
+
+    en_tete = f"  {'Stratégie':<35} {'Rendement':>10} {'B&H':>8} {'Trades':>7}"
+    print(en_tete)
+    print("  " + "-" * 62)
+    for r in resultats:
+        signe = "+" if r['performance_strategie'] >= 0 else ""
+        print(
+            f"  {r['nom']:<35} "
+            f"{signe}{r['performance_strategie']:>8.2f}%"
+            f"{'+' if r['performance_buy_hold'] >= 0 else ''}"
+            f"{r['performance_buy_hold']:>7.2f}%"
+            f"{r['nombre_trades']:>7}"
+        )
+
+    # ── 4. Entraînement IA + prédiction ──────────────────────
+    _section("[4/4] Prédiction IA (Regression Ridge)")
+    actif.trouver_meilleur_alpha()
+    actif.entrainer_IA()
+    actif.predire_demain()
+
+    print("\n" + "═" * 54)
+    print("  Analyse terminée.")
+    print("═" * 54 + "\n")
+
+
+def main():
+    _banniere()
+    ticker = input("\n  Entrez le ticker (ex: AAPL, MSFT) : ").strip().upper()
+
+    if not ticker:
+        print("  Ticker vide. Fin du programme.")
+        return
+
+    analyser(ticker)
+    print("  Ouverture de l'interface graphique...")
+    app = QApplication(sys.argv)
+    fenetre = ScreenerWindow()
+
+    fenetre.show()
+    sys.exit(app.exec())
+
+
+# ─────────────────────────────────────────────
+#  POINT D'ENTRÉE
+# ─────────────────────────────────────────────
+
+if __name__ == "__main__":
+    main()
 
