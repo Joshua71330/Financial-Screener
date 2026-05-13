@@ -177,7 +177,7 @@ class StrategieRSI(Strategie):
         self.seuil_surachat = seuil_surachat
 
     # Fonction récursive (figure imposée optionnelle) ──────────────────────────
-    def _ema_wilder_recursif(self, valeurs: list, alpha: float, index: int) -> float:
+    def calculer_EMA_recursif(self, valeurs: list, alpha: float, index: int) -> float:
         """
         Calcule la moyenne EMA de Wilder jusqu'à l'indice `index` par récursion.
         Cas de base : premier élément = valeurs[0].
@@ -187,7 +187,7 @@ class StrategieRSI(Strategie):
         """
         if index == 0:
             return valeurs[0]
-        precedent = self._ema_wilder_recursif(valeurs, alpha, index - 1)
+        precedent = self.calculer_EMA_recursif(valeurs, alpha, index - 1)
         return valeurs[index] * alpha + precedent * (1 - alpha)
 
     def _calculer_rsi(self, serie: pd.Series) -> pd.Series:
@@ -199,8 +199,8 @@ class StrategieRSI(Strategie):
         n      = len(gains)
 
         # Appel récursif pour chaque point (coûteux sur longues séries → acceptable ici)
-        mg_vals = [self._ema_wilder_recursif(gains,  alpha, i) for i in range(n)]
-        mp_vals = [self._ema_wilder_recursif(pertes, alpha, i) for i in range(n)]
+        mg_vals = [self.calculer_EMA_recursif(gains,  alpha, i) for i in range(n)]
+        mp_vals = [self.calculer_EMA_recursif(pertes, alpha, i) for i in range(n)]
 
         mg = pd.Series(mg_vals, index=serie.index)
         mp = pd.Series(mp_vals, index=serie.index)
