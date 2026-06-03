@@ -694,10 +694,10 @@ class ScreenerWindow(QMainWindow):
             
             if prediction is not None and hit_ratio_actuel > 0.50:
                 if prediction > 0:
-                    self.label_prediction.setText(f"Prédiction IA :\n📈 HAUSSE ({hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"Prédiction IA :\n📈 HAUSSE (Précision:{hit_ratio_actuel*100:.1f}%)")
                     self.label_prediction.setStyleSheet("color: #27ae60; font-weight: bold; margin-top:0px;") 
                 else:
-                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE ({hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE (Précision : {hit_ratio_actuel*100:.1f}%)")
                     self.label_prediction.setStyleSheet("color: #e74c3c; font-weight: bold; margin-top:0px;") 
             else:
                 if hit_ratio_actuel > 0:
