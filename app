@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QLineEdit,
                              QTextEdit)
 
 from strategies import StrategieCroisementMA, StrategieRSI, StrategieMACD
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont, QFontDatabase
 
 import matplotlib as mpl
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -261,9 +261,31 @@ class ScreenerWindow(QMainWindow):
         self.setGeometry(100, 100, 1200, 750) 
         
         # Style Global "Dark Mode"
+        # Style Global "Dark Mode"
         self.setStyleSheet("""
-            QWidget { background-color: black; color: white; }
-            QLineEdit { border: 1px solid #555555; border-radius: 4px; padding: 5px; background-color: #1E1E1E; color: white; }
+            QWidget { 
+                font-family: 'Google Sans', sans-serif; 
+                background-color: #0c0c0c; 
+                color: white; 
+            }
+            /* Style pour la zone de texte normale */
+            QLineEdit { 
+                border: 1px solid #555555; 
+                border-radius: 4px; 
+                padding: 5px; 
+                background-color: #1E1E1E; 
+                color: white; 
+            }
+            /* Nouveau : Style spécifique pour le Placeholder. 
+               Notez qu'il faut cibler QLineEdit et utiliser qproperty-placeholderText
+               si on veut être très précis, mais dans les versions récentes de PyQt6,
+               on utilise la pseudo-classe dynamique. 
+            */
+            QLineEdit[text=""] {
+                color: #b4b4b4; /* Couleur du placeholder quand le champ est vide (ex: gris clair) */
+            }
+        
+            
             QPushButton { border: 1px solid #555555; border-radius: 4px; padding: 8px 15px; background-color: #2A2A2A; color: white; }
             QPushButton:hover { background-color: #3A3A3A; }
             QLabel { color: white; }
@@ -282,7 +304,26 @@ class ScreenerWindow(QMainWindow):
         self.creer_page_ia_report()   # Index 2 <--- NOUVEAU
         
         self.stacked_widget.setCurrentIndex(0)
+        
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+        # 2. On lui donne le focus, retirant ainsi le curseur de la barre de recherche
+        self.setFocus()
 
+
+    def mousePressEvent(self, event):
+        """
+        Désélectionne la barre de recherche (ou tout autre élément) 
+        lorsqu'on clique n'importe où ailleurs dans la fenêtre.
+        """
+        # Si un élément (comme la barre de recherche) possède actuellement le curseur...
+        widget_actif = self.focusWidget()
+        if widget_actif:
+            # ... on lui retire le focus.
+            widget_actif.clearFocus()
+            
+        # On laisse ensuite PyQt gérer le clic normalement pour le reste de l'interface
+        super().mousePressEvent(event)
 
 
     # ================= PAGE 0 : ACCUEIL =================
@@ -292,35 +333,63 @@ class ScreenerWindow(QMainWindow):
         layout_principal.addStretch(1)
 
         self.titre_page1 = QLabel("Scamming Land Screener")
-        self.titre_page1.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        self.titre_page1.setFont(QFont("Google Sans", 24, QFont.Weight.Medium))
         self.titre_page1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout_principal.addWidget(self.titre_page1)
 
         layout_principal.addSpacing(12)
 
-        label_ticker = QLabel("Ticker de l'entreprise :")
-        label_ticker.setFont(QFont("Arial", 16))
-        label_ticker.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        layout_principal.addWidget(label_ticker)
-
-        layout_principal.addSpacing(12)
-
-        layout_boite = QHBoxLayout()
+        # 1. On crée un QWidget qui servira de "boîte" visible
+        boite_recherche = QWidget()
+        
+        # 2. On applique le style spécifique à CETTE boîte
+        boite_recherche.setStyleSheet("""
+            QWidget {
+                background-color: #181818; /* Un fond très légèrement gris pour la distinguer */
+                border: 2px solid transparent; /* Bordure transparente (supprimée visuellement) */
+                border-radius: 24px; /* Rayon de courbure des coins (15px = très arrondi) */
+            }
+        """)
+        
+        # 3. On crée la barre de recherche
         self.input_ticker = QLineEdit()
-        self.input_ticker.setFont(QFont("Arial", 12))
+        self.input_ticker.setFont(QFont("Google Sans", 16, QFont.Weight.Normal))
         self.input_ticker.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.input_ticker.setPlaceholderText("")
+        self.input_ticker.setPlaceholderText("Ticker de l'entreprise")
         self.input_ticker.setFixedWidth(300)
         self.input_ticker.returnPressed.connect(self.lancer_analyse)
+        
+        # On s'assure que la barre de recherche elle-même n'a pas de style qui rentre en conflit
+        # (elle hérite par défaut du style global, mais on peut le forcer ici si besoin)
+        self.input_ticker.setStyleSheet("""
+            QLineEdit {
+                background-color: transparent; /* Fond transparent pour voir la boîte en dessous */
+                border: none; /* Pas de bordure sur la zone de saisie elle-même */
+            }
+        """)
 
-        layout_boite.addStretch()
+        # 4. On utilise le layout_boite pour placer la barre DANS le conteneur stylisé
+        layout_boite = QHBoxLayout(boite_recherche) # Le layout appartient à 'boite_recherche'
+        
+        # On réduit les marges internes du layout pour que la barre occupe bien l'espace
+        layout_boite.setContentsMargins(10, 5, 10, 5) 
+        
         layout_boite.addWidget(self.input_ticker)
-        layout_boite.addStretch()
-        layout_principal.addLayout(layout_boite)
+        
+        # --- FIN DU NOUVEAU BLOC ---
 
+
+        # 5. On place maintenant ce widget conteneur (la boîte) au centre de la page
+        layout_centrage = QHBoxLayout()
+        layout_centrage.addStretch()
+        layout_centrage.addWidget(boite_recherche) # On ajoute le widget complet
+        layout_centrage.addStretch()
+
+        layout_principal.addLayout(layout_centrage)
+        
         layout_principal.addStretch(1)
         self.stacked_widget.addWidget(page)
-
+    
 
 
     # ================= PAGE 1 : DASHBOARD =================
@@ -332,20 +401,20 @@ class ScreenerWindow(QMainWindow):
 
         # Titre de la page 
         self.label_titre_dashboard = QLabel("Tableau de bord technique")
-        self.label_titre_dashboard.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        self.label_titre_dashboard.setFont(QFont("Google Sans", 16, QFont.Weight.Bold))
         self.label_titre_dashboard.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
         layout.addWidget(self.label_titre_dashboard)
 
         # --- NOUVEAU : Label pour la prédiction IA ---
         self.label_prediction = QLabel("Prédiction IA : En attente...")
-        self.label_prediction.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        self.label_prediction.setFont(QFont("Google Sans", 14, QFont.Weight.Bold))
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.label_prediction)
         
         # ================= AJOUTER CECI =================
         layout_navigation_ia = QHBoxLayout()
         self.btn_switch_to_ia = QPushButton("Consulter le Rapport Détaillé IA 🤖")
-        self.btn_switch_to_ia.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.btn_switch_to_ia.setFont(QFont("Google Sans", 11, QFont.Weight.Bold))
         self.btn_switch_to_ia.setStyleSheet("background-color: #1e3d59; border: 1px solid #17b978;")
         self.btn_switch_to_ia.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(2))
         layout_navigation_ia.addStretch()
@@ -354,22 +423,24 @@ class ScreenerWindow(QMainWindow):
         layout.addLayout(layout_navigation_ia)
         # ================================================
 
-        # --- NOUVEAU : Zone d'affichage des backtests de stratégies ---
-        self.console_strategies = QTextEdit()
-        self.console_strategies.setReadOnly(True)
-        # On utilise une police à chasse fixe (Courier) pour que les colonnes du tableau soient parfaitement alignées, comme dans un terminal.
-        self.console_strategies.setFont(QFont("Courier", 10)) 
-        self.console_strategies.setMaximumHeight(120)
-        self.console_strategies.setStyleSheet("""
-            QTextEdit {
-                background-color: #121212; 
-                color: #A0A0A0; 
-                border: 1px solid #333333; 
-                border-radius: 4px;
-                padding: 5px;
-            }
-        """)
-        layout.addWidget(self.console_strategies)
+        
+        # # --- NOUVEAU : Zone d'affichage des backtests de stratégies ---
+        # self.console_strategies = QTextEdit()
+        # self.console_strategies.setReadOnly(True)
+        # # On utilise une police à chasse fixe (Courier) pour que les colonnes du tableau soient parfaitement alignées, comme dans un terminal.
+        # self.console_strategies.setFont(QFont("Courier", 10)) 
+        # self.console_strategies.setMaximumHeight(120)
+        # self.console_strategies.setStyleSheet("""
+        #     QTextEdit {
+        #         background-color: #121212; 
+        #         color: #A0A0A0; 
+        #         border: 1px solid #333333; 
+        #         border-radius: 4px;
+        #         padding: 5px;
+        #     }
+        # """)
+        # layout.addWidget(self.console_strategies)
+
         
         layout.addSpacing(10)
 
@@ -435,7 +506,7 @@ class ScreenerWindow(QMainWindow):
         layout.addSpacing(15)
         
         self.label_titre_ia = QLabel("Rapport d'Optimisation & d'Évaluation de l'IA")
-        self.label_titre_ia.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        self.label_titre_ia.setFont(QFont("Google Sans", 16, QFont.Weight.Bold))
         self.label_titre_ia.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.label_titre_ia)
         
@@ -462,7 +533,7 @@ class ScreenerWindow(QMainWindow):
         # Barre de boutons de navigation basse
         layout_nav_basse = QHBoxLayout()
         btn_retour_graph = QPushButton("← Retourner aux Graphiques")
-        btn_retour_graph.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        btn_retour_graph.setFont(QFont("Google Sans", 10, QFont.Weight.Bold))
         btn_retour_graph.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
         
         btn_nouveau_ticker = QPushButton("🏠 Analyser un autre actif")
@@ -542,12 +613,9 @@ class ScreenerWindow(QMainWindow):
                 f"{r['nombre_trades']:>7}\n"
             )
         
-        # Envoi du texte formaté vers le widget de l'interface
-        self.console_strategies.setText(texte_final)
-        # =========================================================
 
         # Envoi du texte formaté vers le widget de l'interface
-        self.console_strategies.setText(texte_final)
+        # self.console_strategies.setText(texte_final)
         # =========================================================
 
         # --- NOUVEAU : Exécution de l'IA ---
