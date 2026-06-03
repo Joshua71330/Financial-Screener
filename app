@@ -10,17 +10,17 @@ import matplotlib.dates as mdates
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QLineEdit, 
                              QPushButton, QVBoxLayout, QWidget, QStackedWidget, 
                              QHBoxLayout, QMessageBox, QSpacerItem, QSizePolicy,
-                             QTextEdit)
+                             QTextEdit, QTabWidget, QTextBrowser) 
 
 from strategies import StrategieCroisementMA, StrategieRSI, StrategieMACD
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QFontDatabase
+import urllib.error
 
 import matplotlib as mpl
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-# IMPORTANT : Importez votre classe
 from modeles import ActifFinancier 
 
 
@@ -393,25 +393,36 @@ class ScreenerWindow(QMainWindow):
 
 
     # ================= PAGE 1 : DASHBOARD =================
+    # ================= PAGE 1 : DASHBOARD =================
     def creer_page_dashboard(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        layout_principal = QVBoxLayout(page)
+        layout_principal.addStretch(1)
 
-        layout.addStretch(1)
-
-        # Titre de la page 
+        # Titre global
         self.label_titre_dashboard = QLabel("Tableau de bord technique")
         self.label_titre_dashboard.setFont(QFont("Google Sans", 16, QFont.Weight.Bold))
         self.label_titre_dashboard.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
-        layout.addWidget(self.label_titre_dashboard)
+        layout_principal.addWidget(self.label_titre_dashboard)
 
-        # --- NOUVEAU : Label pour la prédiction IA ---
+        # --- CRÉATION DES ONGLETS ---
+        self.onglets = QTabWidget()
+        self.onglets.setStyleSheet("""
+            QTabBar::tab { background: #1E1E1E; color: white; padding: 10px 20px; border: 1px solid #333; border-radius: 4px; margin-right: 2px;}
+            QTabBar::tab:selected { background: #1e3d59; font-weight: bold; border-bottom-color: #1e3d59; }
+            QTabWidget::pane { border: 1px solid #333; border-radius: 4px; top: -1px; }
+        """)
+        layout_principal.addWidget(self.onglets)
+
+        # ================= ONGLET 1 : ANALYSE TECHNIQUE =================
+        self.onglet_tech = QWidget()
+        layout_tech = QVBoxLayout(self.onglet_tech)
+
         self.label_prediction = QLabel("Prédiction IA : En attente...")
         self.label_prediction.setFont(QFont("Google Sans", 14, QFont.Weight.Bold))
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        layout.addWidget(self.label_prediction)
+        layout_tech.addWidget(self.label_prediction)
         
-        # ================= AJOUTER CECI =================
         layout_navigation_ia = QHBoxLayout()
         self.btn_switch_to_ia = QPushButton("Consulter le Rapport Détaillé IA 🤖")
         self.btn_switch_to_ia.setFont(QFont("Google Sans", 11, QFont.Weight.Bold))
@@ -420,38 +431,16 @@ class ScreenerWindow(QMainWindow):
         layout_navigation_ia.addStretch()
         layout_navigation_ia.addWidget(self.btn_switch_to_ia)
         layout_navigation_ia.addStretch()
-        layout.addLayout(layout_navigation_ia)
-        # ================================================
+        layout_tech.addLayout(layout_navigation_ia)
 
-        
-        # # --- NOUVEAU : Zone d'affichage des backtests de stratégies ---
-        # self.console_strategies = QTextEdit()
-        # self.console_strategies.setReadOnly(True)
-        # # On utilise une police à chasse fixe (Courier) pour que les colonnes du tableau soient parfaitement alignées, comme dans un terminal.
-        # self.console_strategies.setFont(QFont("Courier", 10)) 
-        # self.console_strategies.setMaximumHeight(120)
-        # self.console_strategies.setStyleSheet("""
-        #     QTextEdit {
-        #         background-color: #121212; 
-        #         color: #A0A0A0; 
-        #         border: 1px solid #333333; 
-        #         border-radius: 4px;
-        #         padding: 5px;
-        #     }
-        # """)
-        # layout.addWidget(self.console_strategies)
+        layout_tech.addSpacing(10)
 
-        
-        layout.addSpacing(10)
-
-        # --- NOUVEAU : Boutons de filtrage temporel ---
         layout_filtres = QHBoxLayout()
         btn_1m = QPushButton("1 Mois")
         btn_3m = QPushButton("3 Mois")
         btn_6m = QPushButton("6 Mois")
         btn_1a = QPushButton("1 An")
 
-        # 1 mois ~ 21 jours de bourse
         btn_1m.clicked.connect(lambda: self.afficher_periode(21))
         btn_3m.clicked.connect(lambda: self.afficher_periode(63))
         btn_6m.clicked.connect(lambda: self.afficher_periode(126))
@@ -464,38 +453,46 @@ class ScreenerWindow(QMainWindow):
         layout_filtres.addWidget(btn_6m)
         layout_filtres.addWidget(btn_1a)
         layout_filtres.addStretch()
-        
-        layout.addLayout(layout_filtres)
+        layout_tech.addLayout(layout_filtres)
 
-        espaceur_dynamique = QSpacerItem(0, 12, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        layout.addSpacerItem(espaceur_dynamique)
-
-        # Création du canvas multi-courbes
         self.canvas = DashboardCanvas(self, width=10, height=8, dpi=100)
-        
         layout_canvas = QHBoxLayout()
         layout_canvas.addStretch()
         layout_canvas.addWidget(self.canvas)
         layout_canvas.addStretch()
-        layout.addLayout(layout_canvas)
+        layout_tech.addLayout(layout_canvas)
 
-        espaceur_dynamique = QSpacerItem(0, 12, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        layout.addSpacerItem(espaceur_dynamique)
+        self.onglets.addTab(self.onglet_tech, "Analyse Technique & Ridge")
 
-        # Bouton de retour
+        # ================= ONGLET 2 : ANALYSE MACRO / NEWS =================
+        self.onglet_news = QWidget()
+        layout_news = QVBoxLayout(self.onglet_news)
+        
+        self.label_ia_news = QLabel("Statut : En attente d'analyse...")
+        self.label_ia_news.setFont(QFont("Google Sans", 12, QFont.Weight.Bold))
+        layout_news.addWidget(self.label_ia_news)
+        
+        self.affichage_news = QTextBrowser()
+        self.affichage_news.setFont(QFont("Google Sans", 11))
+        self.affichage_news.setOpenExternalLinks(True)
+        self.affichage_news.setStyleSheet("background-color: #121212; color: white; border: 1px solid #333333; padding: 10px; border-radius: 4px;")
+        layout_news.addWidget(self.affichage_news)
+        
+        self.onglets.addTab(self.onglet_news, "Analyse Sémantique (News)")
+
+        # ================= BOUTON RETOUR GLOBAL =================
         layout_boutons = QHBoxLayout()
         btn_accueil = QPushButton("← Analyser un autre actif")
         btn_accueil.clicked.connect(self.retour_accueil)
-        
         layout_boutons.addStretch()
         layout_boutons.addWidget(btn_accueil)
         layout_boutons.addStretch()
 
-        layout.addLayout(layout_boutons)
-        layout.addStretch(1)
+        layout_principal.addSpacing(10)
+        layout_principal.addLayout(layout_boutons)
+        layout_principal.addStretch(1)
 
         self.stacked_widget.addWidget(page)
-
 
 
     # ================= PAGE 2 : RAPPORT IA (NOUVELLE PAGE) =================
@@ -653,6 +650,57 @@ class ScreenerWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
 
+        
+        # =========================================================
+        # EXÉCUTION DE L'ANALYSE FONDAMENTALE
+        # =========================================================
+        self.label_ia_news.setText("🔍 Analyse Lexicale en cours...")
+        QApplication.processEvents() 
+        
+        try:
+            # Si cette ligne plante (pas d'internet ou bloqué par Yahoo), 
+            # le code saute directement au bloc "except" tout en bas !
+            action.analyser_fondamental()
+            
+            html_content = f"<h2 style='color: #17b978;'>Dernières actualités pour {ticker}</h2><hr style='border-color: #555;'>"
+            
+            # Si on arrive ici, la connexion a RÉUSSI. 
+            # Donc si c'est vide, c'est qu'il n'y a VRAIMENT pas de news.
+            if not action.news:
+                html_content += f"<p style='color: #A0A0A0;'>✅ Connexion réussie, mais aucune actualité récente n'a été trouvée pour le ticker {ticker}.</p>"
+            else:
+                for article in action.news:
+                    couleur_sentiment = "white"
+                    if "POSITIF" in article['sentiment']: couleur_sentiment = "#27ae60"
+                    elif "NÉGATIF" in article['sentiment']: couleur_sentiment = "#e74c3c"
+                    
+                    html_content += f"""
+                    <div style='margin-bottom: 20px; padding: 15px; background-color: #1E1E1E; border: 1px solid #333; border-radius: 8px;'>
+                        <h3 style='margin-top: 0;'><a href='{article['lien']}' style='color: #3498db; text-decoration: none;'>{article['titre']}</a></h3>
+                        <p style='margin: 5px 0; font-size: 14px;'>
+                            Sentiment : <b style='color: {couleur_sentiment};'>{article['sentiment']}</b> 
+                            <span style='color: #888;'>| Confiance : {article['confiance']:.1f}%</span>
+                        </p>
+                    </div>
+                    """
+            self.affichage_news.setHtml(html_content)
+            self.label_ia_news.setText("✅ Analyse Macro terminée.")
+            
+        except urllib.error.HTTPError as e:
+            # Spécifique au refus d'accès (Ex: Yahoo t'a banni temporairement ou l'URL est morte)
+            html_content = f"<h2 style='color: #e74c3c;'>❌ Accès Refusé</h2><hr style='border-color: #555;'>"
+            html_content += f"<p>Yahoo Finance a refusé la requête (Erreur HTTP {e.code}). Votre User-Agent a peut-être été détecté ou bloqué.</p>"
+            self.affichage_news.setHtml(html_content)
+            self.label_ia_news.setText("❌ Échec : Accès refusé.")
+            
+        except Exception as e:
+            # Autres erreurs (Ex: pas d'internet du tout)
+            html_content = f"<h2 style='color: #e74c3c;'>❌ Erreur de Connexion</h2><hr style='border-color: #555;'>"
+            html_content += f"<p>Impossible de joindre le serveur. Vérifiez votre connexion internet.<br><br><small>Détail : {repr(e)}</small></p>"
+            self.affichage_news.setHtml(html_content)
+            self.label_ia_news.setText("❌ Échec de l'analyse macro.")
+        # =========================================================
+
         # On sauvegarde le DataFrame complet et le ticker pour le filtrage temporel
         self.df_complet = action.historique.copy()
         self.ticker_actuel = ticker
@@ -671,7 +719,7 @@ class ScreenerWindow(QMainWindow):
 
 
 
-    # --- NOUVEAU : Méthode pour filtrer par période et redessiner ---
+    # Méthode pour filtrer par période et redessiner ---
     def afficher_periode(self, jours_bourse):
         if self.df_complet is None:
             return
