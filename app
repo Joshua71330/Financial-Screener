@@ -268,7 +268,7 @@ class ScreenerWindow(QMainWindow):
                 color: white; 
             }
             QLineEdit { 
-                border: 1px solid #555555; 
+                border: 0px transparent #555555; 
                 border-radius: 4px; 
                 padding: 5px; 
                 background-color: #1E1E1E; 
@@ -281,7 +281,7 @@ class ScreenerWindow(QMainWindow):
                 border: 1px solid #555555; 
                 border-radius: 4px; 
                 padding: 8px 15px; 
-                background-color: #2A2A2A; 
+                background-color: #FFFFFF; 
                 color: white; 
             }
             QPushButton:hover { 
@@ -347,7 +347,7 @@ class ScreenerWindow(QMainWindow):
         boite_recherche.setStyleSheet("""
             QWidget {
                 background-color: #181818; 
-                border: 2px solid transparent; 
+                border: 0px solid transparent; 
                 border-radius: 20px; 
             }
         """)
@@ -405,22 +405,23 @@ class ScreenerWindow(QMainWindow):
             QWidget { 
                 background-color: #1a1a1a; 
                 border-radius: 0px; 
+                padding-left: 10px;
+                padding-right: 10px;
             }
             QLabel { 
-                font-weight: bold; 
-                font-size: 14px; 
-                margin-top: 10px; 
-                color: #17b978; 
-                padding-left: 5px; 
-            }
-            QCheckBox { 
-                font-size: 13px; 
-                padding: 5px; 
+                font-weight: bold;
+                font-size: 15px; 
+                margin-top: 10px;
                 color: white; 
             }
+            QCheckBox { 
+                font-size: 15px;
+                padding: 10px; 
+                color: grey; 
+            }
             QCheckBox::indicator { 
-                width: 16px; 
-                height: 16px; 
+                width: 10px; 
+                height: 10px; 
                 border-radius: 3px; 
                 border: 1px solid #555; 
             }
@@ -429,7 +430,6 @@ class ScreenerWindow(QMainWindow):
             }
             QPushButton { 
                 margin: 5px; 
-                padding: 8px; 
                 border-radius: 5px; 
             }
         """)
@@ -694,10 +694,10 @@ class ScreenerWindow(QMainWindow):
             
             if prediction is not None and hit_ratio_actuel > 0.50:
                 if prediction > 0:
-                    self.label_prediction.setText(f"Prédiction IA :\n📈 HAUSSE (Précision:{hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"Prédiction IA :\n📈 HAUSSE (Précision : {hit_ratio_actuel*100:.1f}%)")
                     self.label_prediction.setStyleSheet("color: #27ae60; font-weight: bold; margin-top:0px;") 
                 else:
-                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE (Précision : {hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE (Précision :{hit_ratio_actuel*100:.1f}%)")
                     self.label_prediction.setStyleSheet("color: #e74c3c; font-weight: bold; margin-top:0px;") 
             else:
                 if hit_ratio_actuel > 0:
