@@ -452,9 +452,25 @@ class ScreenerWindow(QMainWindow):
         self.btn_switch_to_ia.setStyleSheet("background-color: #1e3d59; border: 1px solid #17b978;")
         self.btn_switch_to_ia.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(2))
         layout_sidebar.addWidget(self.btn_switch_to_ia)
+        # --- SECTION : PERFORMANCES STRATÉGIES ---
+        layout_sidebar.addWidget(QLabel("BACKTESTING STRATÉGIES"))
+        
+        self.affichage_perf = QTextBrowser()
+        self.affichage_perf.setReadOnly(True)
+        self.affichage_perf.setMaximumHeight(120) 
+        self.affichage_perf.setStyleSheet("""
+            QTextBrowser {
+                background-color: #121212; 
+                color: #e0e0e0; 
+                border: 1px solid #333333; 
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        layout_sidebar.addWidget(self.affichage_perf)
         
         layout_sidebar.addSpacing(15)
-
+        
         # --- SECTION : ACTUALITÉS ET FONDAMENTAL ---
         layout_sidebar.addWidget(QLabel("ACTUALITÉS ET SENTIMENT"))
 
@@ -740,7 +756,7 @@ class ScreenerWindow(QMainWindow):
             html_content = f"<h4 style='color: #17b978; margin:0;'>Actualités {ticker}</h4><hr style='border-color: #555;'>"
             
             if not action.news:
-                html_content += f"<p style='color: #A0A0A0; font-size: 12px;'>✅ Aucune actualité récente trouvée.</p>"
+                html_content += f"<p style='color: #A0A0A0; font-size: 12px;'> ✅ Aucune actualité récente trouvée.</p>"
             else:
                 for article in action.news:
                     # Définition de l'émoji en fonction du sentiment
@@ -776,16 +792,36 @@ class ScreenerWindow(QMainWindow):
         # -----------------------------------------------------------------------------------------
         # FINALISATION ET MISE À JOUR VISUELLE
         # -----------------------------------------------------------------------------------------
+        # -----------------------------------------------------------------------------------------
+        # FINALISATION ET MISE À JOUR VISUELLE
+        # -----------------------------------------------------------------------------------------
         self.df_complet = action.historique.copy()
+        
+        # 1. Sauvegarde des signaux pour Matplotlib
+        self.df_complet['Signal_MA'] = strategies[0].signaux['Signal']
+        self.df_complet['Signal_RSI'] = strategies[1].signaux['Signal']
+        self.df_complet['Signal_MACD'] = strategies[2].signaux['Signal']
+        
         self.ticker_actuel = ticker
 
         self.label_titre_dashboard.setText(f"Tableau de bord technique : {ticker}")
         self.label_titre_ia.setText(f"Rapport d'Analyse IA Dédié : {ticker}")
 
+        # 2. Affichage des performances des stratégies
+        html_perf = f"<h4 style='color: #3498db; margin:0;'>Rendements (vs Buy&Hold)</h4><hr style='border-color: #555;'>"
+        for res in resultats:
+            couleur = "#27ae60" if res['performance_strategie'] >= 0 else "#e74c3c"
+            html_perf += f"""
+            <p style='margin: 4px 0; font-size: 11px;'>
+                <b>{res['nom']}</b> : <span style='color: {couleur}; font-weight: bold;'>{res['performance_strategie']}%</span> 
+                <span style='color: #888;'>(B&H: {res['performance_buy_hold']}%) - {res['nombre_trades']} trades</span>
+            </p>
+            """
+        self.affichage_perf.setHtml(html_perf)
+
         # On appelle le rafraîchissement avec la durée sélectionnée (252 jours par défaut)
         self.changer_periode(self.jours_actuels)
         self.stacked_widget.setCurrentIndex(1)
-
 
     # ---------------------------------------------------------------------------------------------
     # GESTION DES PÉRIODES TEMPORELLES
@@ -912,7 +948,19 @@ class ScreenerWindow(QMainWindow):
             
         if "EMA_20" in df.columns:
             ax.plot(df.index, df["EMA_20"], label="EMA 20", color="orange", linestyle="-.", alpha=0.8)
+        
+        # Affichage des signaux d'achat/vente (Stratégie MA)
+        if "Signal_MA" in df.columns:
+            achats = df[df['Signal_MA'] == 1]
+            ventes = df[df['Signal_MA'] == -1]
             
+            if not achats.empty:
+                # Flèche verte en dessous du prix bas
+                ax.scatter(achats.index, achats['Low'] * 0.96, marker='^', color='#2ecc71', s=120, label='Achat (MA)', zorder=5)
+            if not ventes.empty:
+                # Flèche rouge au dessus du prix haut
+                ax.scatter(ventes.index, ventes['High'] * 1.04, marker='v', color='#e74c3c', s=120, label='Vente (MA)', zorder=5)
+
         ax.set_ylabel("Prix ($)")
         ax.legend(loc="upper left")
         ax.grid(True, alpha=0.3)
@@ -975,7 +1023,24 @@ class ScreenerWindow(QMainWindow):
             ax.axhline(70, color='red', linestyle='--', alpha=0.5)
             ax.axhline(30, color='green', linestyle='--', alpha=0.5)
             ax.fill_between(df.index, y1=30, y2=70, color='purple', alpha=0.05)
-            
+        # Affichage des signaux MACD
+        if "Signal_MACD" in df.columns:
+            achats = df[df['Signal_MACD'] == 1]
+            ventes = df[df['Signal_MACD'] == -1]
+            if not achats.empty:
+                ax.scatter(achats.index, achats['MACD'], marker='^', color='#2ecc71', s=100, zorder=5)
+            if not ventes.empty:
+                ax.scatter(ventes.index, ventes['MACD'], marker='v', color='#e74c3c', s=100, zorder=5)
+        
+        # Affichage des signaux RSI
+        if "Signal_RSI" in df.columns:
+            achats = df[df['Signal_RSI'] == 1]
+            ventes = df[df['Signal_RSI'] == -1]
+            if not achats.empty:
+                ax.scatter(achats.index, achats['RSI'], marker='^', color='#2ecc71', s=100, zorder=5)
+            if not ventes.empty:
+                ax.scatter(ventes.index, ventes['RSI'], marker='v', color='#e74c3c', s=100, zorder=5)
+        
         ax.set_ylabel("RSI")
         ax.set_ylim(0, 100)
         ax.legend(loc="upper left")
