@@ -1,12 +1,18 @@
 import pandas as pd
 import numpy as np
 
+import io
+from contextlib import redirect_stdout
+
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QLineEdit, 
                              QPushButton, QVBoxLayout, QWidget, QStackedWidget, 
-                             QHBoxLayout, QMessageBox, QSpacerItem, QSizePolicy)
+                             QHBoxLayout, QMessageBox, QSpacerItem, QSizePolicy,
+                             QTextEdit)
+
+from strategies import StrategieCroisementMA, StrategieRSI, StrategieMACD
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
@@ -19,8 +25,12 @@ from modeles import ActifFinancier
 
 
 
+
+
+
 # --- Classe pour gérer le canevas Multi-Graphiques ---
 class DashboardCanvas(FigureCanvas):
+    
     def __init__(self, parent=None, width=10, height=8, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         
@@ -90,6 +100,8 @@ class DashboardCanvas(FigureCanvas):
         # 6. Redessiner le canevas de manière optimisée
         self.fig.canvas.draw_idle()
 
+
+
     def clic_presse(self, event):
             """Déclenché quand on clique sur le graphique."""
             if event.button == 1 and event.inaxes is not None:
@@ -100,10 +112,14 @@ class DashboardCanvas(FigureCanvas):
                 inv = self.pan_axes.transData.inverted()
                 self.press_x, self.press_y = inv.transform((event.x, event.y))
 
+
+
     def clic_relache(self, event):
         """Déclenché quand on relâche le clic."""
         if event.button == 1:
             self.pan_axes = None
+
+
 
     def mouvement_souris(self, event):
         """Gère le glissement (drag) ET l'affichage des valeurs au survol."""
@@ -229,6 +245,8 @@ class DashboardCanvas(FigureCanvas):
 
 
 
+
+
 # --- Fenêtre Principale ---
 
 # Force l'utilisation des dates modernes pour éviter le bug de 1970
@@ -236,6 +254,7 @@ mpl.rcParams['date.converter'] = 'auto'
 
 # --- Fenêtre Principale ---
 class ScreenerWindow(QMainWindow):
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Scamming Land Screener")
@@ -260,8 +279,11 @@ class ScreenerWindow(QMainWindow):
         # Construction des pages
         self.creer_page_accueil()     # Index 0
         self.creer_page_dashboard()   # Index 1
+        self.creer_page_ia_report()   # Index 2 <--- NOUVEAU
         
         self.stacked_widget.setCurrentIndex(0)
+
+
 
     # ================= PAGE 0 : ACCUEIL =================
     def creer_page_accueil(self):
@@ -299,6 +321,8 @@ class ScreenerWindow(QMainWindow):
         layout_principal.addStretch(1)
         self.stacked_widget.addWidget(page)
 
+
+
     # ================= PAGE 1 : DASHBOARD =================
     def creer_page_dashboard(self):
         page = QWidget()
@@ -317,6 +341,35 @@ class ScreenerWindow(QMainWindow):
         self.label_prediction.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.label_prediction)
+        
+        # ================= AJOUTER CECI =================
+        layout_navigation_ia = QHBoxLayout()
+        self.btn_switch_to_ia = QPushButton("Consulter le Rapport Détaillé IA 🤖")
+        self.btn_switch_to_ia.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.btn_switch_to_ia.setStyleSheet("background-color: #1e3d59; border: 1px solid #17b978;")
+        self.btn_switch_to_ia.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(2))
+        layout_navigation_ia.addStretch()
+        layout_navigation_ia.addWidget(self.btn_switch_to_ia)
+        layout_navigation_ia.addStretch()
+        layout.addLayout(layout_navigation_ia)
+        # ================================================
+
+        # --- NOUVEAU : Zone d'affichage des backtests de stratégies ---
+        self.console_strategies = QTextEdit()
+        self.console_strategies.setReadOnly(True)
+        # On utilise une police à chasse fixe (Courier) pour que les colonnes du tableau soient parfaitement alignées, comme dans un terminal.
+        self.console_strategies.setFont(QFont("Courier", 10)) 
+        self.console_strategies.setMaximumHeight(120)
+        self.console_strategies.setStyleSheet("""
+            QTextEdit {
+                background-color: #121212; 
+                color: #A0A0A0; 
+                border: 1px solid #333333; 
+                border-radius: 4px;
+                padding: 5px;
+            }
+        """)
+        layout.addWidget(self.console_strategies)
         
         layout.addSpacing(10)
 
@@ -372,11 +425,68 @@ class ScreenerWindow(QMainWindow):
 
         self.stacked_widget.addWidget(page)
 
+
+
+    # ================= PAGE 2 : RAPPORT IA (NOUVELLE PAGE) =================
+    def creer_page_ia_report(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        
+        layout.addSpacing(15)
+        
+        self.label_titre_ia = QLabel("Rapport d'Optimisation & d'Évaluation de l'IA")
+        self.label_titre_ia.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        self.label_titre_ia.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.label_titre_ia)
+        
+        layout.addSpacing(15)
+        
+        # Le widget d'affichage de texte (Console Graphique)
+        self.console_ia_text = QTextEdit()
+        self.console_ia_text.setReadOnly(True)
+        # Utilisation de la police Courier pour conserver l'alignement parfait du tableau
+        self.console_ia_text.setFont(QFont("Courier", 11))
+        self.console_ia_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #0B0B0B;
+                color: #FFFFFF;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 15px;
+            }
+        """)
+        layout.addWidget(self.console_ia_text)
+        
+        layout.addSpacing(15)
+        
+        # Barre de boutons de navigation basse
+        layout_nav_basse = QHBoxLayout()
+        btn_retour_graph = QPushButton("← Retourner aux Graphiques")
+        btn_retour_graph.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        btn_retour_graph.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
+        
+        btn_nouveau_ticker = QPushButton("🏠 Analyser un autre actif")
+        btn_nouveau_ticker.clicked.connect(self.retour_accueil)
+        
+        layout_nav_basse.addStretch()
+        layout_nav_basse.addWidget(btn_retour_graph)
+        layout_nav_basse.addSpacing(20)
+        layout_nav_basse.addWidget(btn_nouveau_ticker)
+        layout_nav_basse.addStretch()
+        layout.addLayout(layout_nav_basse)
+        
+        layout.addSpacing(15)
+        self.stacked_widget.addWidget(page)
+
+
+
     # ================= LOGIQUE GLOBALE =================
     def retour_accueil(self):
         self.input_ticker.clear()
         self.stacked_widget.setCurrentIndex(0)
         self.input_ticker.setFocus()
+
+
 
     def lancer_analyse(self):
         ticker = self.input_ticker.text().strip().upper()
@@ -404,13 +514,60 @@ class ScreenerWindow(QMainWindow):
         # NOUVEAU : Calcul indispensable pour les features de l'IA
         action.calculer_volume_zscore(fenetre=20) 
 
+        # =========================================================
+        # BACKTESTING DES STRATÉGIES (Transféré depuis main.py)
+        # =========================================================
+        strategies = [
+            StrategieCroisementMA(fenetre_courte=20, fenetre_longue=50),
+            StrategieRSI(fenetre=14, seuil_survente=30, seuil_surachat=70),
+            StrategieMACD(),
+        ]
+
+        for s in strategies:
+            action.ajouter_strategie(s)
+
+        resultats = action.evaluer_strategies()
+
+        # Formatage du texte pour qu'il s'affiche proprement dans l'interface
+        en_tete = f"{'Stratégie':<30} {'Rendement':>10} {'B&H':>8} {'Trades':>7}\n"
+        texte_final = en_tete + "-" * 58 + "\n"
+        
+        for r in resultats:
+            signe = "+" if r['performance_strategie'] >= 0 else ""
+            texte_final += (
+                f"{r['nom']:<30} "
+                f"{signe}{r['performance_strategie']:>8.2f}%"
+                f"{'+' if r['performance_buy_hold'] >= 0 else ''}"
+                f"{r['performance_buy_hold']:>7.2f}%"
+                f"{r['nombre_trades']:>7}\n"
+            )
+        
+        # Envoi du texte formaté vers le widget de l'interface
+        self.console_strategies.setText(texte_final)
+        # =========================================================
+
+        # Envoi du texte formaté vers le widget de l'interface
+        self.console_strategies.setText(texte_final)
+        # =========================================================
+
         # --- NOUVEAU : Exécution de l'IA ---
         # On met un curseur d'attente pour l'utilisateur
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        
+        # ================= AJOUTER CECI (Le buffer de capture) =================
+        capture_buffer = io.StringIO()
+        
         try:
-            action.trouver_meilleur_alpha()
-            action.entrainer_IA()
-            prediction = action.predire_demain()
+            with redirect_stdout(capture_buffer):
+                # Tout ce qui est affiché par ces fonctions sera intercepté silencieusement
+                action.trouver_meilleur_alpha()
+                action.entrainer_IA()
+                prediction = action.predire_demain()
+            
+            # Récupération de la chaîne de caractères et envoi sur la Page 2 (Rapport IA)
+            texte_final_ia = capture_buffer.getvalue()
+            self.console_ia_text.setText(texte_final_ia)
+            # =======================================================================
             
             if prediction is not None:
                 if prediction > 0:
@@ -422,6 +579,9 @@ class ScreenerWindow(QMainWindow):
             else:
                 self.label_prediction.setText("Prédiction IA indisponible")
                 self.label_prediction.setStyleSheet("color: orange;")
+                
+        except Exception as e:
+            self.console_ia_text.setText(f"Erreur lors de la capture du flux IA :\n{str(e)}")
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -431,12 +591,17 @@ class ScreenerWindow(QMainWindow):
 
         # Mise à jour du titre
         self.label_titre_dashboard.setText(f"Tableau de bord technique : {ticker}")
+        
+        # === AJOUTER CECI : Mise à jour du titre du rapport IA ===
+        self.label_titre_ia.setText(f"Rapport d'Analyse IA Dédié : {ticker}")
 
         # On affiche par défaut la dernière année (252 jours)
         self.afficher_periode(252)
 
         # On affiche la page du Dashboard
         self.stacked_widget.setCurrentIndex(1)
+
+
 
     # --- NOUVEAU : Méthode pour filtrer par période et redessiner ---
     def afficher_periode(self, jours_bourse):
@@ -462,6 +627,8 @@ class ScreenerWindow(QMainWindow):
 
         self.canvas.fig.tight_layout()
         self.canvas.draw()
+        
+        
 
     # ================= MÉTHODES DE DESSIN =================
     def formater_axe_x(self, ax):
@@ -483,6 +650,8 @@ class ScreenerWindow(QMainWindow):
         # Inclinaison pour éviter que les textes se chevauchent
         for label in ax.get_xticklabels():
             label.set_rotation(45)
+
+
 
     def dessiner_prix(self, ax, df, ticker):
         ax.clear()
@@ -526,6 +695,8 @@ class ScreenerWindow(QMainWindow):
         ax.legend(loc="upper left")
         ax.grid(True, alpha=0.3)
 
+
+
     def dessiner_volatilite(self, ax, df, ticker):
         ax.clear()
         
@@ -540,6 +711,8 @@ class ScreenerWindow(QMainWindow):
         ax.set_ylabel("Volatilité")
         ax.legend(loc="upper left")
         ax.grid(True, alpha=0.3)
+
+
 
     def dessiner_macd(self, ax, df, ticker):
         ax.clear()
@@ -560,6 +733,8 @@ class ScreenerWindow(QMainWindow):
         ax.legend(loc="upper left")
         ax.grid(True, alpha=0.3)
 
+
+
     def dessiner_rsi(self, ax, df, ticker):
         ax.clear()
         
@@ -578,6 +753,10 @@ class ScreenerWindow(QMainWindow):
         ax.set_ylim(0, 100)
         ax.legend(loc="upper left")
         ax.grid(True, alpha=0.3)
+
+
+
+
 
 
 if __name__ == "__main__":
