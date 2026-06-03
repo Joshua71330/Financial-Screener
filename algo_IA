@@ -61,13 +61,33 @@ class Regression_Ridge:
 class AnalyseurNews:
     def __init__(self):
         self.mots_positifs = {
-            'raises', 'target', 'bullish', 'growth', 'upgrades', 
-            'record', 'profit', 'beats', 'surges', 'jump', 'soars', 'buy'
+            # Mouvements de marché à la hausse
+            'raise', 'raises', 'raised', 'surge', 'surges', 'surged', 'soar', 'soars', 'soared',
+            'jump', 'jumps', 'jumped', 'rally', 'rallies', 'rallied', 'leap', 'rebound', 'recovers', 'recovery',
+            
+            # Recommandations d'analystes
+            'upgrade', 'upgrades', 'upgraded', 'bullish', 'outperform', 'buy', 'target',
+            
+            # Fondamental, Croissance & Résultats
+            'growth', 'record', 'profit', 'profitable', 'beat', 'beats', 'beaten', 'gain', 'gains', 'gained',
+            'dividend', 'strong', 'momentum', 'confident', 'acquisition', 'acquire', 'boom', 'success',
+            'expansion', 'innovative', 'partnership', 'deal', 'revenue'
         }
-        
+
         self.mots_negatifs = {
-            'cut', 'downgrades', 'bearish', 'loss', 'misses', 
-            'lawsuit', 'drops', 'plunges', 'probe', 'sell', 'bankrupt'
+            # Mouvements de marché à la baisse
+            'cut', 'cuts', 'drop', 'drops', 'dropped', 'plunge', 'plunges', 'plunged',
+            'crash', 'crashes', 'crashed', 'slide', 'slides', 'slump', 'slumps', 'tumble', 'fall', 'falls',
+            
+            # Recommandations d'analystes
+            'downgrade', 'downgrades', 'downgraded', 'bearish', 'underperform', 'sell',
+            
+            # Fondamental, Risques & Résultats
+            'loss', 'losses', 'miss', 'misses', 'missed', 'weak', 'weakness', 'warning', 'warns',
+            'debt', 'default', 'bankrupt', 'bankruptcy', 'deficit', 'inflation', 'recession',
+            
+            # Légal & Scandales (impactent lourdement le cours)
+            'probe', 'lawsuit', 'sue', 'sued', 'penalty', 'fine', 'fines', 'fraud', 'investigation', 'guilty'
         }
 
     def _nettoyer_texte(self, texte):
