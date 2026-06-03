@@ -466,6 +466,7 @@ class ScreenerWindow(QMainWindow):
         
         self.affichage_news = QTextBrowser()
         self.affichage_news.setReadOnly(True)
+        self.affichage_news.setOpenExternalLinks(True)
         # On donne une hauteur confortable mais limitée à la zone d'actualité
         self.affichage_news.setMaximumHeight(200) 
         self.affichage_news.setStyleSheet("""
@@ -475,6 +476,10 @@ class ScreenerWindow(QMainWindow):
                 border: 1px solid #333333; 
                 border-radius: 6px;
                 padding: 8px;
+            }
+            a {
+                color: #3498db;
+                text-decoration: none;
             }
         """)
         layout_sidebar.addWidget(self.affichage_news)
@@ -738,18 +743,20 @@ class ScreenerWindow(QMainWindow):
                 html_content += f"<p style='color: #A0A0A0; font-size: 12px;'>✅ Aucune actualité récente trouvée.</p>"
             else:
                 for article in action.news:
-                    couleur_sentiment = "white"
-                    if "POSITIF" in article['sentiment']: couleur_sentiment = "#27ae60"
-                    elif "NÉGATIF" in article['sentiment']: couleur_sentiment = "#e74c3c"
+                    # Définition de l'émoji en fonction du sentiment
+                    emoji = "⚪"
+                    if "POSITIF" in article['sentiment']: emoji = "🟢"
+                    elif "NÉGATIF" in article['sentiment']: emoji = "🔴"
                     
+                    # Génération d'une seule ligne simple et robuste
                     html_content += f"""
-                    <div style='margin-bottom: 10px; padding: 8px; background-color: #1E1E1E; border: 1px solid #333; border-radius: 8px;'>
-                        <a href='{article['lien']}' style='color: #3498db; text-decoration: none; font-size: 12px; font-weight: bold;'>{article['titre']}</a>
-                        <p style='margin: 4px 0 0 0; font-size: 11px;'>
-                            Sentiment: <b style='color: {couleur_sentiment};'>{article['sentiment']}</b> 
-                            <span style='color: #888;'>| Conf: {article['confiance']:.0f}%</span>
-                        </p>
-                    </div>
+                    <p style="margin-top: 5px; margin-bottom: 5px;">
+                        <span style="font-size: 12px;">{emoji}</span>
+                        <a href="{article['lien']}" style="font-size: 13px; font-weight: bold; text-decoration: none; color: #3498db;">
+                            {article['titre']}
+                        </a>
+                    </p>
+                    <hr style="background-color: #333333; height: 1px; border: none; margin-top: 8px; margin-bottom: 8px;">
                     """
             self.affichage_news.setHtml(html_content)
             self.label_ia_news.setText("✅ Analyse Macro terminée.")
