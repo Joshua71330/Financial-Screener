@@ -10,7 +10,7 @@ import matplotlib.dates as mdates
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QLineEdit, 
                              QPushButton, QVBoxLayout, QWidget, QStackedWidget, 
                              QHBoxLayout, QMessageBox, QSpacerItem, QSizePolicy,
-                             QTextEdit, QTabWidget, QTextBrowser) 
+                             QTextEdit, QTabWidget, QTextBrowser, QCheckBox) 
 
 from strategies import StrategieCroisementMA, StrategieRSI, StrategieMACD
 from PyQt6.QtCore import Qt, QTimer
@@ -33,15 +33,7 @@ class DashboardCanvas(FigureCanvas):
     
     def __init__(self, parent=None, width=10, height=8, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
-        
-        # 4 sous-graphiques empilés. sharex=True pour lier l'axe des dates.
-        # height_ratios: donne 3x plus d'espace au prix par rapport aux autres.
-        self.axes = self.fig.subplots(4, 1, sharex=True, gridspec_kw={'height_ratios': [2, 1, 1, 1]})
-        
-        self.fig.subplots_adjust(hspace=0.1, bottom=0.1)
-        
-        # ---> NOUVEAU : Fond noir pour la figure complète <---
-        self.fig.patch.set_facecolor('black')
+        self.fig.patch.set_facecolor('#0c0c0c')
         
         super(DashboardCanvas, self).__init__(self.fig)
         self.fig.canvas.mpl_connect('scroll_event', self.zoom_molette)
@@ -53,9 +45,12 @@ class DashboardCanvas(FigureCanvas):
         self.press_x = None
         self.press_y = None
         
-        # --- Variables pour le Tooltip (Survol) ---
-        self.df_courant = None # Va contenir le DataFrame
-        # Création d'une boîte de texte flottante, initialement invisible
+        self.df_courant = None
+        # --- NOUVEAU : Listes vides, elles seront remplies dynamiquement ---
+        self.axes = [] 
+        self.types_axes = [] 
+        self.x_dates_num = None
+        
         self.tooltip = self.fig.text(0.0, 0.0, "", va="bottom", ha="left",
                                      fontsize=8, color="white",
                                      bbox=dict(boxstyle="round,pad=0.2", fc="#2A2A2A", ec="#555555", alpha=0.9),
@@ -175,38 +170,36 @@ class DashboardCanvas(FigureCanvas):
             # =========================================================
             # CALCUL DE LA DISTANCE Y POUR CACHER LA BULLE
             # =========================================================
+            # --- NOUVEAU : Détection dynamique du type de graphique ---
+            index_graphique = self.axes.index(ax)
+            type_ax = self.types_axes[index_graphique]
+
             y_courbe = None
-            if index_graphique == 0 and "Close" in row: y_courbe = row['Close']
-            elif index_graphique == 1 and "Volatilite_20j" in row: y_courbe = row['Volatilite_20j']
-            elif index_graphique == 2 and "MACD" in row: y_courbe = row['MACD']
-            elif index_graphique == 3 and "RSI" in row: y_courbe = row['RSI']
+            if type_ax == 'prix' and "Close" in row: y_courbe = row['Close']
+            elif type_ax == 'vol' and "Volatilite_20j" in row: y_courbe = row['Volatilite_20j']
+            elif type_ax == 'macd' and "MACD" in row: y_courbe = row['MACD']
+            elif type_ax == 'rsi' and "RSI" in row: y_courbe = row['RSI']
 
             if y_courbe is not None:
-                # On récupère la hauteur totale de l'axe survolé
                 y_min, y_max = ax.get_ylim()
-                # On définit une zone d'accroche (5% de la hauteur du graphique)
                 tolerance = (y_max - y_min) * 0.05 
-                
-                # Si la souris est trop haute ou trop basse par rapport à la courbe
                 if abs(event.ydata - y_courbe) > tolerance:
                     if self.tooltip.get_visible():
                         self.tooltip.set_visible(False)
                         self.fig.canvas.draw_idle()
-                    return # On arrête ici, on n'affiche pas la bulle
-            # =========================================================
+                    return 
             
             lignes = [f"{date_reelle}"]
-            
-            if index_graphique == 0:
+            if type_ax == 'prix':
                 lignes.append(f"Prix : {row['Close']:.2f} $")
                 if "SMA_20" in row: lignes.append(f"SMA 20 : {row['SMA_20']:.2f}")
                 if "EMA_20" in row: lignes.append(f"EMA 20 : {row['EMA_20']:.2f}")
-            elif index_graphique == 1:
+            elif type_ax == 'vol':
                 if "Volatilite_20j" in row: lignes.append(f"Volatilité : {row['Volatilite_20j']:.4f}")
-            elif index_graphique == 2:
+            elif type_ax == 'macd':
                 if "MACD" in row: lignes.append(f"MACD : {row['MACD']:.2f}")
                 if "MACD_signal" in row: lignes.append(f"Signal : {row['MACD_signal']:.2f}")
-            elif index_graphique == 3:
+            elif type_ax == 'rsi':
                 if "RSI" in row: lignes.append(f"RSI : {row['RSI']:.2f}")
 
             # 4. Mettre à jour le texte
@@ -333,7 +326,7 @@ class ScreenerWindow(QMainWindow):
         layout_principal.addStretch(1)
 
         self.titre_page1 = QLabel("Scamming Land Screener")
-        self.titre_page1.setFont(QFont("Google Sans", 24, QFont.Weight.Medium))
+        self.titre_page1.setFont(QFont("Google Sans", 20, QFont.Weight.Medium))
         self.titre_page1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout_principal.addWidget(self.titre_page1)
 
@@ -347,13 +340,13 @@ class ScreenerWindow(QMainWindow):
             QWidget {
                 background-color: #181818; /* Un fond très légèrement gris pour la distinguer */
                 border: 2px solid transparent; /* Bordure transparente (supprimée visuellement) */
-                border-radius: 24px; /* Rayon de courbure des coins (15px = très arrondi) */
+                border-radius: 20px; /* Rayon de courbure des coins (15px = très arrondi) */
             }
         """)
         
         # 3. On crée la barre de recherche
         self.input_ticker = QLineEdit()
-        self.input_ticker.setFont(QFont("Google Sans", 16, QFont.Weight.Normal))
+        self.input_ticker.setFont(QFont("Google Sans", 15, QFont.Weight.Normal))
         self.input_ticker.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.input_ticker.setPlaceholderText("Ticker de l'entreprise")
         self.input_ticker.setFixedWidth(300)
@@ -393,36 +386,117 @@ class ScreenerWindow(QMainWindow):
 
 
     # ================= PAGE 1 : DASHBOARD =================
-    # ================= PAGE 1 : DASHBOARD =================
     def creer_page_dashboard(self):
         page = QWidget()
-        layout_principal = QVBoxLayout(page)
-        layout_principal.addStretch(1)
-
-        # Titre global
-        self.label_titre_dashboard = QLabel("Tableau de bord technique")
-        self.label_titre_dashboard.setFont(QFont("Google Sans", 16, QFont.Weight.Bold))
-        self.label_titre_dashboard.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
-        layout_principal.addWidget(self.label_titre_dashboard)
-
-        # --- CRÉATION DES ONGLETS ---
-        self.onglets = QTabWidget()
-        self.onglets.setStyleSheet("""
-            QTabBar::tab { background: #1E1E1E; color: white; padding: 10px 20px; border: 1px solid #333; border-radius: 4px; margin-right: 2px;}
-            QTabBar::tab:selected { background: #1e3d59; font-weight: bold; border-bottom-color: #1e3d59; }
-            QTabWidget::pane { border: 1px solid #333; border-radius: 4px; top: -1px; }
+        # Layout principal horizontal (Gauche: Barre, Droite: Contenu)
+        layout_global = QHBoxLayout(page)
+        layout_global.setContentsMargins(0, 0, 0, 0)
+        layout_global.setSpacing(0)
+        
+        # ================= SIDEBAR (Barre verticale gauche) =================
+        sidebar = QWidget()
+        sidebar.setFixedWidth(230)
+        sidebar.setStyleSheet("""
+            QWidget { background-color: #1a1a1a; border-radius: 0px; }
+            QLabel { font-weight: bold; font-size: 14px; margin-top: 10px; color: #17b978; padding-left: 5px; }
+            QCheckBox { font-size: 13px; padding: 5px; color: white; }
+            QCheckBox::indicator { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #555; }
+            QCheckBox::indicator:checked { background-color: #17b978; }
+            QPushButton { margin: 5px; padding: 8px; border-radius: 5px; }
         """)
-        layout_principal.addWidget(self.onglets)
-
-        # ================= ONGLET 1 : ANALYSE TECHNIQUE =================
-        self.onglet_tech = QWidget()
-        layout_tech = QVBoxLayout(self.onglet_tech)
+        layout_sidebar = QVBoxLayout(sidebar)
+        
+        # --- Sélection des graphiques ---
+        layout_sidebar.addWidget(QLabel("GRAPHIQUES AFFICHÉS"))
+        
+        self.chk_prix = QCheckBox("Prix, SMA & EMA")
+        self.chk_prix.setChecked(True)
+        self.chk_vol = QCheckBox("Volatilité (20j)")
+        self.chk_vol.setChecked(True)
+        self.chk_macd = QCheckBox("MACD & Signal")
+        self.chk_macd.setChecked(True)
+        self.chk_rsi = QCheckBox("RSI (14j)")
+        self.chk_rsi.setChecked(True)
+        
+        # Connexion aux mises à jour
+        self.chk_prix.stateChanged.connect(self.actualiser_graphiques)
+        self.chk_vol.stateChanged.connect(self.actualiser_graphiques)
+        self.chk_macd.stateChanged.connect(self.actualiser_graphiques)
+        self.chk_rsi.stateChanged.connect(self.actualiser_graphiques)
+        
+        layout_sidebar.addWidget(self.chk_prix)
+        layout_sidebar.addWidget(self.chk_vol)
+        layout_sidebar.addWidget(self.chk_macd)
+        layout_sidebar.addWidget(self.chk_rsi)
+        
+        layout_sidebar.addSpacing(15)
+        
+        # --- Sélection de la période ---
+        layout_sidebar.addWidget(QLabel("PÉRIODE D'ANALYSE"))
+        
+        btn_1m = QPushButton("1 Mois")
+        btn_3m = QPushButton("3 Mois")
+        btn_6m = QPushButton("6 Mois")
+        btn_1a = QPushButton("1 An")
+        
+        btn_1m.clicked.connect(lambda: self.changer_periode(21))
+        btn_3m.clicked.connect(lambda: self.changer_periode(63))
+        btn_6m.clicked.connect(lambda: self.changer_periode(126))
+        btn_1a.clicked.connect(lambda: self.changer_periode(252))
+        
+        layout_sidebar.addWidget(btn_1m)
+        layout_sidebar.addWidget(btn_3m)
+        layout_sidebar.addWidget(btn_6m)
+        layout_sidebar.addWidget(btn_1a)
+        
+        layout_sidebar.addStretch()
+        
+        # Bouton retour en bas
+        btn_accueil = QPushButton("← Autre actif")
+        btn_accueil.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;")
+        btn_accueil.clicked.connect(self.retour_accueil)
+        layout_sidebar.addWidget(btn_accueil)
+        
+        
+        # ================= ZONE PRINCIPALE (Droite) =================
+        zone_droite = QWidget()
+        layout_droite = QVBoxLayout(zone_droite)
+        layout_droite.setContentsMargins(15, 15, 15, 15)
+        
+        self.label_titre_dashboard = QLabel("Tableau de bord technique")
+        self.label_titre_dashboard.setFont(QFont("Google Sans", 18, QFont.Weight.Bold))
+        self.label_titre_dashboard.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
+        layout_droite.addWidget(self.label_titre_dashboard)
 
         self.label_prediction = QLabel("Prédiction IA : En attente...")
         self.label_prediction.setFont(QFont("Google Sans", 14, QFont.Weight.Bold))
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        layout_tech.addWidget(self.label_prediction)
+        layout_droite.addWidget(self.label_prediction)
         
+        # ✅ AJOUTEZ CES 3 LIGNES ICI POUR CORRIGER L'ERREUR :
+        self.label_ia_news = QLabel("") # Texte vide par défaut
+        self.label_ia_news.setFont(QFont("Google Sans", 11, QFont.Weight.Normal))
+        self.label_ia_news.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout_droite.addWidget(self.label_ia_news)
+        
+        self.affichage_news = QTextBrowser()
+        self.affichage_news.setReadOnly(True)
+        self.affichage_news.setMaximumHeight(120) # Limite la hauteur pour ne pas écraser les graphiques
+        self.affichage_news.setStyleSheet("""
+            QTextBrowser {
+                background-color: #121212; 
+                color: #e0e0e0; 
+                border: 1px solid #333333; 
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        # Par défaut, on peut le cacher s'il n'y a pas de news, ou le laisser visible.
+        # self.affichage_news.hide() 
+        layout_droite.addWidget(self.affichage_news)
+        
+        
+        # Bouton IA
         layout_navigation_ia = QHBoxLayout()
         self.btn_switch_to_ia = QPushButton("Consulter le Rapport Détaillé IA 🤖")
         self.btn_switch_to_ia.setFont(QFont("Google Sans", 11, QFont.Weight.Bold))
@@ -431,67 +505,16 @@ class ScreenerWindow(QMainWindow):
         layout_navigation_ia.addStretch()
         layout_navigation_ia.addWidget(self.btn_switch_to_ia)
         layout_navigation_ia.addStretch()
-        layout_tech.addLayout(layout_navigation_ia)
-
-        layout_tech.addSpacing(10)
-
-        layout_filtres = QHBoxLayout()
-        btn_1m = QPushButton("1 Mois")
-        btn_3m = QPushButton("3 Mois")
-        btn_6m = QPushButton("6 Mois")
-        btn_1a = QPushButton("1 An")
-
-        btn_1m.clicked.connect(lambda: self.afficher_periode(21))
-        btn_3m.clicked.connect(lambda: self.afficher_periode(63))
-        btn_6m.clicked.connect(lambda: self.afficher_periode(126))
-        btn_1a.clicked.connect(lambda: self.afficher_periode(252))
-
-        layout_filtres.addStretch()
-        layout_filtres.addWidget(QLabel("Période :"))
-        layout_filtres.addWidget(btn_1m)
-        layout_filtres.addWidget(btn_3m)
-        layout_filtres.addWidget(btn_6m)
-        layout_filtres.addWidget(btn_1a)
-        layout_filtres.addStretch()
-        layout_tech.addLayout(layout_filtres)
-
+        layout_droite.addLayout(layout_navigation_ia)
+        
+        # Canvas Graphique
         self.canvas = DashboardCanvas(self, width=10, height=8, dpi=100)
-        layout_canvas = QHBoxLayout()
-        layout_canvas.addStretch()
-        layout_canvas.addWidget(self.canvas)
-        layout_canvas.addStretch()
-        layout_tech.addLayout(layout_canvas)
-
-        self.onglets.addTab(self.onglet_tech, "Analyse Technique & Ridge")
-
-        # ================= ONGLET 2 : ANALYSE MACRO / NEWS =================
-        self.onglet_news = QWidget()
-        layout_news = QVBoxLayout(self.onglet_news)
+        layout_droite.addWidget(self.canvas)
         
-        self.label_ia_news = QLabel("Statut : En attente d'analyse...")
-        self.label_ia_news.setFont(QFont("Google Sans", 12, QFont.Weight.Bold))
-        layout_news.addWidget(self.label_ia_news)
+        # --- Assemblage des deux parties ---
+        layout_global.addWidget(sidebar)
+        layout_global.addWidget(zone_droite)
         
-        self.affichage_news = QTextBrowser()
-        self.affichage_news.setFont(QFont("Google Sans", 11))
-        self.affichage_news.setOpenExternalLinks(True)
-        self.affichage_news.setStyleSheet("background-color: #121212; color: white; border: 1px solid #333333; padding: 10px; border-radius: 4px;")
-        layout_news.addWidget(self.affichage_news)
-        
-        self.onglets.addTab(self.onglet_news, "Analyse Sémantique (News)")
-
-        # ================= BOUTON RETOUR GLOBAL =================
-        layout_boutons = QHBoxLayout()
-        btn_accueil = QPushButton("← Analyser un autre actif")
-        btn_accueil.clicked.connect(self.retour_accueil)
-        layout_boutons.addStretch()
-        layout_boutons.addWidget(btn_accueil)
-        layout_boutons.addStretch()
-
-        layout_principal.addSpacing(10)
-        layout_principal.addLayout(layout_boutons)
-        layout_principal.addStretch(1)
-
         self.stacked_widget.addWidget(page)
 
 
@@ -731,7 +754,7 @@ class ScreenerWindow(QMainWindow):
         self.label_titre_ia.setText(f"Rapport d'Analyse IA Dédié : {ticker}")
 
         # On affiche par défaut la dernière année (252 jours)
-        self.afficher_periode(252)
+        self.changer_periode(252)
 
         # On affiche la page du Dashboard
         self.stacked_widget.setCurrentIndex(1)
@@ -739,28 +762,65 @@ class ScreenerWindow(QMainWindow):
 
 
     # Méthode pour filtrer par période et redessiner ---
-    def afficher_periode(self, jours_bourse):
-        if self.df_complet is None:
+    # Dans la classe ScreenerWindow, ajoutez self.jours_actuels = 252 dans le __init__
+    
+    def changer_periode(self, jours):
+        self.jours_actuels = jours
+        self.actualiser_graphiques()
+
+    def actualiser_graphiques(self):
+        if self.df_complet is None: return
+        
+        # 1. Préparer les données
+        # (Si on n'a pas défini self.jours_actuels dans le init, on le sécurise ici)
+        jours = getattr(self, 'jours_actuels', 252) 
+        df = self.df_complet.tail(jours)
+        self.canvas.df_courant = df
+        
+        # 2. Réinitialiser la grille
+        self.canvas.fig.clear()
+        
+        # 3. Lister ce qu'il faut afficher
+        actifs = []
+        if self.chk_prix.isChecked(): actifs.append('prix')
+        if self.chk_vol.isChecked(): actifs.append('vol')
+        if self.chk_macd.isChecked(): actifs.append('macd')
+        if self.chk_rsi.isChecked(): actifs.append('rsi')
+        
+        n_plots = len(actifs)
+        
+        if n_plots == 0: # Si l'utilisateur a tout décoché
+            self.canvas.axes = []
+            self.canvas.types_axes = []
+            self.canvas.draw()
             return
             
-        # On découpe le DataFrame selon le nombre de jours demandés
-        df = self.df_complet.tail(jours_bourse)
+        # Donner plus d'espace au graphique des prix s'il est présent
+        ratios = [2.5 if a == 'prix' else 1 for a in actifs]
         
-        # On met à jour le DataFrame du canvas pour le tooltip
-        self.canvas.df_courant = df
-
-        ax_prix, ax_vol, ax_macd, ax_rsi = self.canvas.axes
-
-        self.dessiner_prix(ax_prix, df, self.ticker_actuel)
-        self.dessiner_volatilite(ax_vol, df, self.ticker_actuel)
-        self.dessiner_macd(ax_macd, df, self.ticker_actuel)
-        self.dessiner_rsi(ax_rsi, df, self.ticker_actuel)
-
-        self.formater_axe_x(ax_rsi)
+        # 4. Créer les sous-graphiques à la volée
+        axes_crees = self.canvas.fig.subplots(n_plots, 1, sharex=True, gridspec_kw={'height_ratios': ratios})
         
+        # Matplotlib renvoie un seul objet (pas un tableau) s'il n'y a qu'un plot
+        if n_plots == 1:
+            self.canvas.axes = [axes_crees]
+        else:
+            self.canvas.axes = axes_crees.tolist()
+            
+        self.canvas.types_axes = actifs
+        
+        # 5. Dessiner les courbes sur les bons axes
+        for ax, type_ax in zip(self.canvas.axes, actifs):
+            if type_ax == 'prix': self.dessiner_prix(ax, df, self.ticker_actuel)
+            elif type_ax == 'vol': self.dessiner_volatilite(ax, df, self.ticker_actuel)
+            elif type_ax == 'macd': self.dessiner_macd(ax, df, self.ticker_actuel)
+            elif type_ax == 'rsi': self.dessiner_rsi(ax, df, self.ticker_actuel)
+            
+        self.formater_axe_x(self.canvas.axes[-1])
         self.canvas.x_dates_num = mdates.date2num(df.index)
-
-        self.canvas.fig.tight_layout()
+        
+        # Ajustement de l'espace pour éviter les marges disgracieuses
+        self.canvas.fig.subplots_adjust(hspace=0.1, bottom=0.15, left=0.08, right=0.95, top=0.95)
         self.canvas.draw()
         
         
