@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 import sys
 import matplotlib.pyplot as plt
@@ -9,6 +10,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QLineEdit,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+import matplotlib as mpl
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -26,7 +28,11 @@ class DashboardCanvas(FigureCanvas):
         # height_ratios: donne 3x plus d'espace au prix par rapport aux autres.
         self.axes = self.fig.subplots(4, 1, sharex=True, gridspec_kw={'height_ratios': [2, 1, 1, 1]})
         
-        self.fig.subplots_adjust(hspace=0.1, bottom=0.1) 
+        self.fig.subplots_adjust(hspace=0.1, bottom=0.1)
+        
+        # ---> NOUVEAU : Fond noir pour la figure complète <---
+        self.fig.patch.set_facecolor('black')
+        
         super(DashboardCanvas, self).__init__(self.fig)
         self.fig.canvas.mpl_connect('scroll_event', self.zoom_molette)
         self.fig.canvas.mpl_connect('button_press_event', self.clic_presse)
@@ -41,8 +47,8 @@ class DashboardCanvas(FigureCanvas):
         self.df_courant = None # Va contenir le DataFrame
         # Création d'une boîte de texte flottante, initialement invisible
         self.tooltip = self.fig.text(0.0, 0.0, "", va="bottom", ha="left",
-                                     fontsize=8, 
-                                     bbox=dict(boxstyle="round,pad=0.2", fc="#f8f9fa", ec="#cccccc", alpha=0.9),
+                                     fontsize=8, color="white",
+                                     bbox=dict(boxstyle="round,pad=0.2", fc="#2A2A2A", ec="#555555", alpha=0.9),
                                      zorder=100, visible=False)
 
 
@@ -135,11 +141,13 @@ class DashboardCanvas(FigureCanvas):
         
         try:
             # 1. Convertir la position de la souris (X) en date
-            date_souris = pd.to_datetime(mdates.num2date(event.xdata)).tz_localize(None)
+            # date_souris = pd.to_datetime(mdates.num2date(event.xdata)).tz_localize(None)
             
             # 2. Trouver l'index de la date la plus proche dans le DataFrame
-            index_propre = self.df_courant.index.tz_localize(None)
-            idx = index_propre.get_indexer([date_souris], method='nearest')[0]
+            # index_propre = self.df_courant.index.tz_localize(None)
+            # idx = index_propre.get_indexer([date_souris], method='nearest')[0]
+            
+            idx = np.abs(self.x_dates_num - event.xdata).argmin()
             
             # Récupérer la ligne de données et formater la vraie date
             row = self.df_courant.iloc[idx]
@@ -186,16 +194,27 @@ class DashboardCanvas(FigureCanvas):
                 if "RSI" in row: lignes.append(f"RSI : {row['RSI']:.2f}")
 
             # 4. Mettre à jour le texte
-            self.tooltip.set_text("\n".join(lignes))
+            nouveau_texte = "\n".join(lignes)
             
-            # 5. Positionner le Tooltip près du curseur (coordonnées relatives 0 à 1)
+            # 5. Positionner le Tooltip
             fig_w, fig_h = self.fig.get_size_inches() * self.fig.dpi
             pos_x = (event.x + 15) / fig_w
             pos_y = (event.y + 15) / fig_h
             
-            # Repousser le tooltip s'il s'approche trop du bord droit ou haut
             if pos_x > 0.8: pos_x = (event.x - 120) / fig_w
             if pos_y > 0.8: pos_y = (event.y - 80) / fig_h
+            
+            nouvelle_position = (pos_x, pos_y)
+
+            # OPTIMISATION : Ne redessiner que si nécessaire
+            texte_actuel = self.tooltip.get_text()
+            position_actuelle = self.tooltip.get_position()
+            
+            if not self.tooltip.get_visible() or texte_actuel != nouveau_texte or position_actuelle != nouvelle_position:
+                self.tooltip.set_text(nouveau_texte)
+                self.tooltip.set_position(nouvelle_position)
+                self.tooltip.set_visible(True)
+                self.fig.canvas.draw_idle() # Appel de rendu uniquement s'il y a un changement
                 
             self.tooltip.set_position((pos_x, pos_y))
             self.tooltip.set_visible(True)
@@ -211,30 +230,38 @@ class DashboardCanvas(FigureCanvas):
 
 
 # --- Fenêtre Principale ---
+
+# Force l'utilisation des dates modernes pour éviter le bug de 1970
+mpl.rcParams['date.converter'] = 'auto'
+
+# --- Fenêtre Principale ---
 class ScreenerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Scamming Land Screener")
-        self.setGeometry(100, 100, 1200, 750) # Fenêtre légèrement agrandie pour le multi-courbes
+        self.setGeometry(100, 100, 1200, 750) 
         
-        # Style Global
+        # Style Global "Dark Mode"
         self.setStyleSheet("""
-            QWidget { background-color: white; color: black; }
-            QLineEdit { border: 1px solid #CCCCCC; border-radius: 4px; padding: 5px; }
-            QPushButton { border: 1px solid black; border-radius: 4px; padding: 8px 15px; background-color: #F8F8F8; }
-            QPushButton:hover { background-color: #E0E0E0; }
+            QWidget { background-color: black; color: white; }
+            QLineEdit { border: 1px solid #555555; border-radius: 4px; padding: 5px; background-color: #1E1E1E; color: white; }
+            QPushButton { border: 1px solid #555555; border-radius: 4px; padding: 8px 15px; background-color: #2A2A2A; color: white; }
+            QPushButton:hover { background-color: #3A3A3A; }
+            QLabel { color: white; }
         """)
 
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
 
+        # Variables pour stocker les données courantes
+        self.df_complet = None
+        self.ticker_actuel = ""
+
         # Construction des pages
         self.creer_page_accueil()     # Index 0
-        self.creer_page_dashboard()   # Index 1 (Dashboard unique avec 4 courbes)
+        self.creer_page_dashboard()   # Index 1
         
         self.stacked_widget.setCurrentIndex(0)
-
-
 
     # ================= PAGE 0 : ACCUEIL =================
     def creer_page_accueil(self):
@@ -269,47 +296,59 @@ class ScreenerWindow(QMainWindow):
         layout_boite.addStretch()
         layout_principal.addLayout(layout_boite)
 
-        # Bouton lancer (Optionnel, au cas où l'utilisateur ne fait pas "Entrée")
-        # layout_btn = QHBoxLayout()
-        # btn_lancer = QPushButton("Lancer l'Analyse")
-        # btn_lancer.clicked.connect(self.lancer_analyse)
-        # layout_btn.addStretch()
-        # layout_btn.addWidget(btn_lancer)
-        # layout_btn.addStretch()
-        # layout_principal.addSpacing(20)
-        # layout_principal.addLayout(layout_btn)
-
         layout_principal.addStretch(1)
         self.stacked_widget.addWidget(page)
 
-
-
-    # ================= PAGE 1 : DASHBOARD (4 COURBES) =================
+    # ================= PAGE 1 : DASHBOARD =================
     def creer_page_dashboard(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        # 1. RESSORT HAUT : Pousse tout le contenu vers le bas
         layout.addStretch(1)
-
-        espaceur_haut = QSpacerItem(0, 24, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        layout.addSpacerItem(espaceur_haut)
 
         # Titre de la page 
         self.label_titre_dashboard = QLabel("Tableau de bord technique")
         self.label_titre_dashboard.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        self.label_titre_dashboard.setAlignment(Qt.AlignmentFlag.AlignHCenter) # Centré horizontalement
+        self.label_titre_dashboard.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
         layout.addWidget(self.label_titre_dashboard)
 
-        # 2. ESPACE FIXE : Crée une respiration entre le titre et le graphique
+        # --- NOUVEAU : Label pour la prédiction IA ---
+        self.label_prediction = QLabel("Prédiction IA : En attente...")
+        self.label_prediction.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.label_prediction)
+        
+        layout.addSpacing(10)
+
+        # --- NOUVEAU : Boutons de filtrage temporel ---
+        layout_filtres = QHBoxLayout()
+        btn_1m = QPushButton("1 Mois")
+        btn_3m = QPushButton("3 Mois")
+        btn_6m = QPushButton("6 Mois")
+        btn_1a = QPushButton("1 An")
+
+        # 1 mois ~ 21 jours de bourse
+        btn_1m.clicked.connect(lambda: self.afficher_periode(21))
+        btn_3m.clicked.connect(lambda: self.afficher_periode(63))
+        btn_6m.clicked.connect(lambda: self.afficher_periode(126))
+        btn_1a.clicked.connect(lambda: self.afficher_periode(252))
+
+        layout_filtres.addStretch()
+        layout_filtres.addWidget(QLabel("Période :"))
+        layout_filtres.addWidget(btn_1m)
+        layout_filtres.addWidget(btn_3m)
+        layout_filtres.addWidget(btn_6m)
+        layout_filtres.addWidget(btn_1a)
+        layout_filtres.addStretch()
+        
+        layout.addLayout(layout_filtres)
+
         espaceur_dynamique = QSpacerItem(0, 12, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         layout.addSpacerItem(espaceur_dynamique)
 
         # Création du canvas multi-courbes
         self.canvas = DashboardCanvas(self, width=10, height=8, dpi=100)
         
-        # 3. CENTRAGE HORIZONTAL DU CANVAS (Optionnel mais recommandé)
-        # On l'enferme dans une boîte horizontale avec des ressorts sur les côtés
         layout_canvas = QHBoxLayout()
         layout_canvas.addStretch()
         layout_canvas.addWidget(self.canvas)
@@ -318,9 +357,6 @@ class ScreenerWindow(QMainWindow):
 
         espaceur_dynamique = QSpacerItem(0, 12, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         layout.addSpacerItem(espaceur_dynamique)
-
-        # Espace avant les boutons
-        layout.addSpacing(12)
 
         # Bouton de retour
         layout_boutons = QHBoxLayout()
@@ -332,16 +368,9 @@ class ScreenerWindow(QMainWindow):
         layout_boutons.addStretch()
 
         layout.addLayout(layout_boutons)
-
-        espaceur_dynamique = QSpacerItem(0, 24, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        layout.addSpacerItem(espaceur_dynamique)
-
-        # 4. RESSORT BAS : Pousse tout le contenu vers le haut
         layout.addStretch(1)
 
         self.stacked_widget.addWidget(page)
-
-
 
     # ================= LOGIQUE GLOBALE =================
     def retour_accueil(self):
@@ -353,11 +382,17 @@ class ScreenerWindow(QMainWindow):
         ticker = self.input_ticker.text().strip().upper()
         if not ticker: return
 
-        # 1. Traitement des données via votre classe
+        # 1. Traitement des données via ta classe
         action = ActifFinancier(ticker)
         if not action.charger_donnees():
             QMessageBox.warning(self, "Erreur", f"Impossible de charger les données pour le ticker : {ticker}")
             return
+
+        # ---> CORRECTION DU BUG 1970 : On force l'index en format datetime de Pandas <---
+        # Assure-toi que "import pandas as pd" est bien au début de ton fichier app.py
+        # ---> CORRECTION DU BUG 1970 ET DES FUSEAUX HORAIRES <---
+        action.historique.index = pd.to_datetime(action.historique.index, utc=True).tz_localize(None)
+        # ---------------------------------------------------------------------------------
 
         action.calculer_moyenne_mobile(fenetre=20)
         action.calculer_EMA(fenetre=20)
@@ -365,58 +400,141 @@ class ScreenerWindow(QMainWindow):
         action.calculer_volatilite_historique(fenetre=20)
         action.calculer_rsi(fenetre=14)
         action.calculer_macd()
+        
+        # NOUVEAU : Calcul indispensable pour les features de l'IA
+        action.calculer_volume_zscore(fenetre=20) 
 
-        # On isole la dernière année de cotation (~252 jours)
-        df = action.historique.copy().tail(252*10)
+        # --- NOUVEAU : Exécution de l'IA ---
+        # On met un curseur d'attente pour l'utilisateur
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            action.trouver_meilleur_alpha()
+            action.entrainer_IA()
+            prediction = action.predire_demain()
+            
+            if prediction is not None:
+                if prediction > 0:
+                    self.label_prediction.setText(f"Prédiction IA pour demain : 📈 HAUSSE")
+                    self.label_prediction.setStyleSheet("color: #27ae60;") # Vert
+                else:
+                    self.label_prediction.setText(f"Prédiction IA pour demain : 📉 BAISSE")
+                    self.label_prediction.setStyleSheet("color: #e74c3c;") # Rouge
+            else:
+                self.label_prediction.setText("Prédiction IA indisponible")
+                self.label_prediction.setStyleSheet("color: orange;")
+        finally:
+            QApplication.restoreOverrideCursor()
 
-        # --> LIGNE À AJOUTER ICI <--
-        # On donne le DataFrame au canevas pour le système de survol
-        self.canvas.df_courant = df
+        # On sauvegarde le DataFrame complet et le ticker pour le filtrage temporel
+        self.df_complet = action.historique.copy()
+        self.ticker_actuel = ticker
 
         # Mise à jour du titre
         self.label_titre_dashboard.setText(f"Tableau de bord technique : {ticker}")
 
-        # 2. Répartition des graphiques dans le bon ordre (Prix -> Volatilité -> MACD -> RSI)
+        # On affiche par défaut la dernière année (252 jours)
+        self.afficher_periode(252)
+
+        # On affiche la page du Dashboard
+        self.stacked_widget.setCurrentIndex(1)
+
+    # --- NOUVEAU : Méthode pour filtrer par période et redessiner ---
+    def afficher_periode(self, jours_bourse):
+        if self.df_complet is None:
+            return
+            
+        # On découpe le DataFrame selon le nombre de jours demandés
+        df = self.df_complet.tail(jours_bourse)
+        
+        # On met à jour le DataFrame du canvas pour le tooltip
+        self.canvas.df_courant = df
+
         ax_prix, ax_vol, ax_macd, ax_rsi = self.canvas.axes
 
-        self.dessiner_prix(ax_prix, df, ticker)
-        self.dessiner_volatilite(ax_vol, df, ticker)
-        self.dessiner_macd(ax_macd, df, ticker)
-        self.dessiner_rsi(ax_rsi, df, ticker)
+        self.dessiner_prix(ax_prix, df, self.ticker_actuel)
+        self.dessiner_volatilite(ax_vol, df, self.ticker_actuel)
+        self.dessiner_macd(ax_macd, df, self.ticker_actuel)
+        self.dessiner_rsi(ax_rsi, df, self.ticker_actuel)
 
-        # On formatte l'axe des dates uniquement sur le graphique du bas (RSI)
         self.formater_axe_x(ax_rsi)
+        
+        self.canvas.x_dates_num = mdates.date2num(df.index)
 
-        # Ajustement des marges pour un rendu propre
         self.canvas.fig.tight_layout()
         self.canvas.draw()
 
-        # 3. On affiche la page du Dashboard
-        self.stacked_widget.setCurrentIndex(1)
-
-
-
     # ================= MÉTHODES DE DESSIN =================
     def formater_axe_x(self, ax):
-        """Formatte l'axe des X pour afficher proprement les dates."""
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
-        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        # 1. Le locator calcule dynamiquement l'espacement idéal selon le zoom
+        locator = mdates.AutoDateLocator()
+        ax.xaxis.set_major_locator(locator)
+        
+        # 2. Le formatter automatique adapte le texte selon l'échelle du locator
+        formatter = mdates.AutoDateFormatter(locator)
+        
+        # 3. Personnalisation des formats d'affichage selon le niveau de zoom
+        # (les clés sont des intervalles en jours)
+        formatter.scaled[1] = '%d %b %Y'   # Vue détaillée (ex: 13 Mai 2026)
+        formatter.scaled[30] = '%b %Y'     # Vue mensuelle (ex: Mai 2026)
+        formatter.scaled[365] = '%Y'       # Vue annuelle (ex: 2026)
+        
+        ax.xaxis.set_major_formatter(formatter)
+        
+        # Inclinaison pour éviter que les textes se chevauchent
         for label in ax.get_xticklabels():
             label.set_rotation(45)
 
     def dessiner_prix(self, ax, df, ticker):
         ax.clear()
-        ax.plot(df.index, df["Close"], label="Prix (Close)", color="black", linewidth=1.5)
+        
+        # --- STYLE DU FOND ET DES AXES ---
+        ax.set_facecolor('#1e1e1e')  # Gris assez foncé pour le fond du graphique
+        ax.tick_params(colors='lightgray') # Chiffres des axes en gris clair
+        for spine in ax.spines.values():
+            spine.set_color('#2d2d2d') # Bordures discrètes
+        
+        # 1. Préparation des données pour les bougies
+        # Largeur des bougies (environ 0.6 unité de jour)
+        width = 0.6
+        
+        # On sépare les jours de hausse (vert) et de baisse (rouge)
+        hausse = df[df.Close >= df.Open]
+        baisse = df[df.Close < df.Open]
+        
+        # 2. Dessin des mèches (High et Low) de la même couleur que le corps
+        # On trace les mèches vertes pour la hausse
+        ax.vlines(hausse.index, hausse.Low, hausse.High, color='#27ae60', linewidth=1.5)
+        # On trace les mèches rouges pour la baisse
+        ax.vlines(baisse.index, baisse.Low, baisse.High, color='#e74c3c', linewidth=1.5)
+        
+        # 3. Dessin des corps (Open et Close)
+        # Pour la hausse : corps vert, bordure verte
+        ax.bar(hausse.index, hausse.Close - hausse.Open, width, 
+               bottom=hausse.Open, color='#27ae60', edgecolor='#27ae60', linewidth=1)
+        
+        # Pour la baisse : corps rouge, bordure rouge
+        ax.bar(baisse.index, baisse.Open - baisse.Close, width, 
+               bottom=baisse.Close, color='#e74c3c', edgecolor='#e74c3c', linewidth=1)
+
+        # 4. Superposition des indicateurs (SMA/EMA)
         if "SMA_20" in df.columns:
-            ax.plot(df.index, df["SMA_20"], label="SMA 20", color="blue", linestyle="--", alpha=0.7)
+            ax.plot(df.index, df["SMA_20"], label="SMA 20", color="blue", linestyle="--", alpha=0.8)
         if "EMA_20" in df.columns:
-            ax.plot(df.index, df["EMA_20"], label="EMA 20", color="orange", linestyle="-.", alpha=0.7)
+            ax.plot(df.index, df["EMA_20"], label="EMA 20", color="orange", linestyle="-.", alpha=0.8)
+            
         ax.set_ylabel("Prix ($)")
         ax.legend(loc="upper left")
         ax.grid(True, alpha=0.3)
 
     def dessiner_volatilite(self, ax, df, ticker):
         ax.clear()
+        
+         # --- STYLE DU FOND ET DES AXES ---
+        ax.set_facecolor('#1e1e1e')  # Gris assez foncé pour le fond du graphique
+        ax.tick_params(colors='lightgray') # Chiffres des axes en gris clair
+        for spine in ax.spines.values():
+            spine.set_color('#2d2d2d') # Bordures discrètes
+        
         if "Volatilite_20j" in df.columns:
             ax.plot(df.index, df["Volatilite_20j"], label="Volatilité (20j)", color="red")
         ax.set_ylabel("Volatilité")
@@ -425,6 +543,13 @@ class ScreenerWindow(QMainWindow):
 
     def dessiner_macd(self, ax, df, ticker):
         ax.clear()
+        
+         # --- STYLE DU FOND ET DES AXES ---
+        ax.set_facecolor('#1e1e1e')  # Gris assez foncé pour le fond du graphique
+        ax.tick_params(colors='lightgray') # Chiffres des axes en gris clair
+        for spine in ax.spines.values():
+            spine.set_color('#2d2d2d') # Bordures discrètes
+        
         if "MACD" in df.columns and "MACD_signal" in df.columns:
             ax.plot(df.index, df["MACD"], label="MACD", color="blue")
             ax.plot(df.index, df["MACD_signal"], label="Signal", color="orange")
@@ -437,6 +562,13 @@ class ScreenerWindow(QMainWindow):
 
     def dessiner_rsi(self, ax, df, ticker):
         ax.clear()
+        
+         # --- STYLE DU FOND ET DES AXES ---
+        ax.set_facecolor('#1e1e1e')  # Gris assez foncé pour le fond du graphique
+        ax.tick_params(colors='lightgray') # Chiffres des axes en gris clair
+        for spine in ax.spines.values():
+            spine.set_color('#2d2d2d') # Bordures discrètes
+        
         if "RSI" in df.columns:
             ax.plot(df.index, df["RSI"], label="RSI", color="purple")
             ax.axhline(70, color='red', linestyle='--', alpha=0.5)
