@@ -808,14 +808,19 @@ class ScreenerWindow(QMainWindow):
         self.label_titre_ia.setText(f"Rapport d'Analyse IA Dédié : {ticker}")
 
         # 2. Affichage des performances des stratégies
-        html_perf = f"<h4 style='color: #3498db; margin:0;'>Rendements (vs Buy&Hold)</h4><hr style='border-color: #555;'>"
+        html_perf = f"<h4 style='color: #3498db; margin:0;'>Rendements & Risques (vs B&H)</h4><hr style='border-color: #555;'>"
         for res in resultats:
             couleur = "#27ae60" if res['performance_strategie'] >= 0 else "#e74c3c"
+            # Mise en valeur si notre Max Drawdown est meilleur (plus petit) que le marché
+            couleur_dd = "#2ecc71" if res['max_dd_strat'] < res['max_dd_bh'] else "#e0e0e0"
+            
             html_perf += f"""
-            <p style='margin: 4px 0; font-size: 11px;'>
+            <div style='margin-bottom: 8px; font-size: 11px;'>
                 <b>{res['nom']}</b> : <span style='color: {couleur}; font-weight: bold;'>{res['performance_strategie']}%</span> 
-                <span style='color: #888;'>(B&H: {res['performance_buy_hold']}%) - {res['nombre_trades']} trades</span>
-            </p>
+                <span style='color: #888;'>(B&H: {res['performance_buy_hold']}%)</span><br>
+                <span style='color: #AAA;'>↳ Trades : {res['nombre_trades']} | Sharpe : {res['sharpe_ratio']} </span><br>
+                <span style='color: #AAA;'>↳ Pire chute (Max DD) : <b style='color: {couleur_dd};'>-{res['max_dd_strat']}%</b> vs -{res['max_dd_bh']}% (B&H)</span>
+            </div>
             """
         self.affichage_perf.setHtml(html_perf)
 
