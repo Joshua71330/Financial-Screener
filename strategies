@@ -55,13 +55,16 @@ class Strategie(ABC):
     def calculer_performance(self, df: pd.DataFrame) -> dict:
         """
         Backteste la stratégie sur l'historique df.
-        Compare le rendement de la stratégie avec le Buy & Hold pur.
+        Compare le rendement ET le risque de la stratégie avec le Buy & Hold pur.
 
         Retourne un dictionnaire avec :
           - nom                   : nom de la stratégie
           - performance_strategie : rendement total en %
           - performance_buy_hold  : rendement B&H de référence en %
           - nombre_trades         : nombre d'entrées en position
+          - sharpe_ratio          : rendement ajusté au risque (annualisé)
+          - max_dd_strat          : pire chute historique (Max Drawdown) de la stratégie en %
+          - max_dd_bh             : pire chute historique (Max Drawdown) du Buy & Hold en %
         """
         if self.signaux is None:
             self.generer_signaux(df)
@@ -82,17 +85,41 @@ class Strategie(ABC):
         df_bt['Rdt_Close']  = df_bt['Close'].pct_change()
         df_bt['Rdt_Strat']  = df_bt['Position'].shift(1) * df_bt['Rdt_Close']
 
-        rdt_strat  = float((1 + df_bt['Rdt_Strat'].dropna()).cumprod().iloc[-1] - 1)
+        # --- 1. CALCULS DES RENDEMENTS PURS ---
+        serie_rendements = df_bt['Rdt_Strat'].dropna()
+        rdt_strat  = float((1 + serie_rendements).cumprod().iloc[-1] - 1)
         rdt_bh     = float(df_bt['Close'].iloc[-1] / df_bt['Close'].iloc[0] - 1)
         nb_trades  = int((df_bt['Signal'] == 1).sum())
+
+        # --- 2. CALCULS DU RISQUE (RATIO DE SHARPE) ---
+        # Évalue le rendement par unité de risque (volatilité). 
+        # On l'annualise en multipliant par la racine de 252 (jours de bourse).
+        sharpe_ratio = 0.0
+        if serie_rendements.std() != 0:
+            sharpe_ratio = (serie_rendements.mean() / serie_rendements.std()) * np.sqrt(252)
+            
+        # --- 3. CALCULS DU RISQUE (MAX DRAWDOWN) ---
+        # A. Pire chute de l'algorithme (Stratégie)
+        cum_returns_strat = (1 + serie_rendements).cumprod()
+        peak_strat = cum_returns_strat.cummax()
+        drawdown_strat = (cum_returns_strat - peak_strat) / peak_strat
+        max_dd_strat = abs(drawdown_strat.min()) * 100
+        
+        # B. Pire chute du marché (Buy & Hold) pour la comparaison
+        cum_returns_bh = df_bt['Close'] / df_bt['Close'].iloc[0]
+        peak_bh = cum_returns_bh.cummax()
+        drawdown_bh = (cum_returns_bh - peak_bh) / peak_bh
+        max_dd_bh = abs(drawdown_bh.min()) * 100
 
         return {
             'nom':                    self.nom,
             'performance_strategie':  round(rdt_strat * 100, 2),
             'performance_buy_hold':   round(rdt_bh    * 100, 2),
             'nombre_trades':          nb_trades,
+            'sharpe_ratio':           round(sharpe_ratio, 2),
+            'max_dd_strat':           round(max_dd_strat, 2),
+            'max_dd_bh':              round(max_dd_bh, 2)
         }
-
 
 # ─────────────────────────────────────────────
 #  STRATÉGIE 1 — CROISEMENT DE MOYENNES MOBILES
