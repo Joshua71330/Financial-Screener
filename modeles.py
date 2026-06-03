@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path 
 import numpy as np 
-from algos_IA import Regression_Ridge
+from algos_IA import Regression_Ridge, AnalyseurNews
 from gestion_donnees import telecharger_historique
 
 class ActifFinancier: 
@@ -13,6 +13,7 @@ class ActifFinancier:
         self.features_list = ['Dist_SMA', 'Dist_EMA', 'Volatilite_20j', 'RSI', 'Volume_zscore']
         self.mu = None
         self.sigma = None
+        self.news=[]
 
     def charger_donnees(self):
         dossier = Path(__file__).parent
@@ -337,6 +338,16 @@ class ActifFinancier:
         print(f"\n PRÉDICTION Technique POUR DEMAIN ({self.ticker}) : Potentielle {signe} \n(Aucune donnée Macro ou d'actualité prise en compte, uniquement basée sur les indicateurs techniques et l'historique des prix).")
         
         return prediction
+    
+    def analyser_fondamental(self):
+        """
+        Déclenche l'IA sémantique pour récupérer et analyser les news de cet actif.
+        """
+        print(f"Lancement de l'analyse fondamentale pour {self.ticker}...")
+        analyseur = AnalyseurNews()
+        self.news = analyseur.scraper_news_yahoo(self.ticker)
+        return self.news
+    
     
 # --- TEST DU MODULE ---
 if __name__ == "__main__":
