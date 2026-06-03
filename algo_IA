@@ -1,4 +1,8 @@
 import numpy as np
+import urllib.request
+import urllib.error
+import re
+import json
 
 class Regression_Ridge:
     #y=theta*X + alpha*||theta||^2
@@ -53,4 +57,71 @@ class Regression_Ridge:
         
         return r2, mae, hit_ratio
     
-   
+
+class AnalyseurNews:
+    def __init__(self):
+        self.mots_positifs = {
+            'raises', 'target', 'bullish', 'growth', 'upgrades', 
+            'record', 'profit', 'beats', 'surges', 'jump', 'soars', 'buy'
+        }
+        
+        self.mots_negatifs = {
+            'cut', 'downgrades', 'bearish', 'loss', 'misses', 
+            'lawsuit', 'drops', 'plunges', 'probe', 'sell', 'bankrupt'
+        }
+
+    def _nettoyer_texte(self, texte):
+        """Transforme le texte en minuscules et ne garde que les mots."""
+        texte = texte.lower()
+        # L'expression régulière \b\w+\b extrait uniquement les mots (vire la ponctuation)
+        mots = re.findall(r'\b\w+\b', texte)
+        return mots
+
+    def calculer_sentiment(self, texte):
+        """Calcule un score basé sur l'apparition des mots de ton lexique."""
+        mots = self._nettoyer_texte(texte)
+        if not mots:
+            return "⚪ NEUTRE", 0.0
+
+        score_positif = sum(1 for mot in mots if mot in self.mots_positifs)
+        score_negatif = sum(1 for mot in mots if mot in self.mots_negatifs)
+        
+        score_total = score_positif - score_negatif
+        
+        # Calcul d'un pourcentage de "confiance" 
+        mots_trouves = score_positif + score_negatif
+        confiance = (mots_trouves / len(mots)) * 100 if len(mots) > 0 else 0
+
+        if score_total > 0:
+            return "🟢 POSITIF", confiance
+        elif score_total < 0:
+            return "🔴 NÉGATIF", confiance
+        else:
+            return "⚪ NEUTRE", confiance
+
+    def scraper_news_yahoo(self, ticker):
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        req = urllib.request.Request(url, headers=headers)
+        
+        resultats = []
+        
+        # Note : On ne met pas le try/except ici pour laisser les erreurs remonter à l'interface !
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            news_brutes = data.get('news', [])
+            
+            for article in news_brutes[:5]:
+                titre = article.get('title', '')
+                lien = article.get('link', '')
+                
+                if titre:
+                    sentiment, confiance = self.calculer_sentiment(titre)
+                    resultats.append({
+                        'titre': titre,
+                        'sentiment': sentiment,
+                        'confiance': confiance,
+                        'lien': lien
+                    })
+                    
+        return resultats
