@@ -11,11 +11,13 @@ Classes testées :
 """
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import numpy as np
 import pandas as pd
+import json
+import urllib.error
 
-from algos_IA  import Regression_Ridge
+from algos_IA  import Regression_Ridge, AnalyseurNews
 from modeles   import ActifFinancier
 from strategies import (
     StrategieCroisementMA,
@@ -320,6 +322,99 @@ class TestStrategies(unittest.TestCase):
         from strategies import Strategie
         s = StrategieRSI()
         self.assertIsInstance(s, Strategie)
+
+# ═══════════════════════════════════════════════════════════════
+#  4. TESTS — AnalyseurNews (algos_IA.py)
+# ═══════════════════════════════════════════════════════════════
+
+class TestAnalyseurNews(unittest.TestCase):
+    """Teste le nettoyage de texte, le calcul de sentiment et le scraper web."""
+
+    def setUp(self):
+        self.analyseur = AnalyseurNews()
+
+    # ── Test 13 : Nettoyage de texte ─────────────────────────
+
+    def test_nettoyer_texte_enleve_ponctuation_et_minuscule(self):
+        """Le texte doit être mis en minuscules et débarrassé de sa ponctuation."""
+        texte_brut = "Hausse record, l'entreprise gagne 100%!"
+        mots = self.analyseur._nettoyer_texte(texte_brut)
+        
+        self.assertIn("hausse", mots)
+        self.assertIn("record", mots)
+        self.assertNotIn(",", mots)
+        self.assertNotIn("!", mots)
+
+    # ── Test 14 : Calcul de sentiment (Lexique) ──────────────
+
+    def test_calculer_sentiment_positif(self):
+        """Une phrase avec des mots positifs doit renvoyer 🟢 POSITIF."""
+        texte = "L'entreprise annonce une forte hausse et un profit record ce trimestre."
+        sentiment, confiance = self.analyseur.calculer_sentiment(texte)
+        
+        self.assertEqual(sentiment, "🟢 POSITIF")
+        self.assertGreater(confiance, 0.0)
+
+    def test_calculer_sentiment_negatif(self):
+        """Une phrase avec des mots négatifs doit renvoyer 🔴 NÉGATIF."""
+        texte = "La chute des marchés provoque une baisse et une perte financière."
+        sentiment, confiance = self.analyseur.calculer_sentiment(texte)
+        
+        self.assertEqual(sentiment, "🔴 NÉGATIF")
+        self.assertGreater(confiance, 0.0)
+
+    def test_calculer_sentiment_neutre(self):
+        """Une phrase sans mots du lexique doit renvoyer ⚪ NEUTRE avec 0% de confiance."""
+        texte = "Le PDG a mangé une pomme à la cantine."
+        sentiment, confiance = self.analyseur.calculer_sentiment(texte)
+        
+        self.assertEqual(sentiment, "⚪ NEUTRE")
+        self.assertEqual(confiance, 0.0)
+
+    # ── Test 15 : Scraper Web (Mocking) ──────────────────────
+
+    @patch('urllib.request.urlopen')
+    def test_scraper_news_yahoo_succes(self, mock_urlopen):
+        """
+        Teste si le scraper parse bien le JSON quand internet fonctionne, 
+        sans faire de vraie requête HTTP (Mock).
+        """
+        # On fabrique une fausse réponse JSON (comme si Yahoo nous répondait)
+        fake_json = {
+            "news": [
+                {"title": "Profit record et hausse !", "link": "https://fake.link.com"}
+            ]
+        }
+        
+        # On configure notre objet MagicMock pour imiter le comportement de urlopen
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(fake_json).encode('utf-8')
+        mock_response.__enter__.return_value = mock_response # Pour gérer le "with urlopen() as..."
+        mock_urlopen.return_value = mock_response
+
+        # On lance notre fonction
+        resultats = self.analyseur.scraper_news_yahoo("FAKE_TICKER")
+
+        # Vérifications
+        self.assertEqual(len(resultats), 1)
+        self.assertEqual(resultats[0]['titre'], "Profit record et hausse !")
+        self.assertEqual(resultats[0]['sentiment'], "🟢 POSITIF") # Vérifie que le calcul s'est appliqué
+        self.assertEqual(resultats[0]['lien'], "https://fake.link.com")
+
+    @patch('urllib.request.urlopen')
+    def test_scraper_news_yahoo_erreur_reseau(self, mock_urlopen):
+        """
+        Si Yahoo renvoie une erreur (ex: 404), le scraper ne doit pas faire 
+        planter le programme entier, il doit juste renvoyer une liste vide.
+        """
+        # On force la fausse connexion internet à planter
+        mock_urlopen.side_effect = urllib.error.URLError("Not Found")
+        
+        # Le code ne doit pas lever d'exception non gérée
+        resultats = self.analyseur.scraper_news_yahoo("FAKE_TICKER")
+        
+        # La liste doit être vide
+        self.assertEqual(resultats, [])
 
 
 # ═══════════════════════════════════════════════════════════════
