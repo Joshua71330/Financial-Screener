@@ -633,17 +633,36 @@ class ScreenerWindow(QMainWindow):
             texte_final_ia = capture_buffer.getvalue()
             self.console_ia_text.setText(texte_final_ia)
             # =======================================================================
+            # CONDITION D'AFFICHAGE SÉCURISÉ (HIT RATIO > 50%)
+            # =======================================================================
             
-            if prediction is not None:
+            # On vérifie que la variable existe (sécurité) et on la récupère
+            hit_ratio_actuel = getattr(action, 'hit_ratio', 0)
+            
+            if prediction is not None and hit_ratio_actuel > 0.50:
+                # L'IA est performante : on affiche la direction et le score
                 if prediction > 0:
-                    self.label_prediction.setText(f"Prédiction IA pour demain : 📈 HAUSSE")
-                    self.label_prediction.setStyleSheet("color: #27ae60;") # Vert
+                    self.label_prediction.setText(f"Prédiction IA : 📈 HAUSSE (precision : {hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setStyleSheet("color: #27ae60; font-weight: bold;") 
                 else:
-                    self.label_prediction.setText(f"Prédiction IA pour demain : 📉 BAISSE")
-                    self.label_prediction.setStyleSheet("color: #e74c3c;") # Rouge
+                    self.label_prediction.setText(f"Prédiction IA : 📉 BAISSE (precision :{hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setStyleSheet("color: #e74c3c; font-weight: bold;") 
             else:
-                self.label_prediction.setText("Prédiction IA indisponible")
-                self.label_prediction.setStyleSheet("color: orange;")
+                # L'IA est mauvaise ou égale à 50% : on bloque l'affichage
+                if hit_ratio_actuel > 0:
+                    texte_blocage = f"🔒 IA non fiable (Précision : {hit_ratio_actuel*100:.1f}%)"
+                else:
+                    texte_blocage = "🔒 Prédiction IA indisponible"
+                    
+                self.label_prediction.setText(texte_blocage)
+                # Style grisé / désactivé pour montrer que l'option est bloquée
+                self.label_prediction.setStyleSheet("""
+                    color: #888888; 
+                    background-color: #2A2A2A; 
+                    padding: 5px 15px; 
+                    border-radius: 6px;
+                    border: 1px solid #444444;
+                """)
                 
         except Exception as e:
             self.console_ia_text.setText(f"Erreur lors de la capture du flux IA :\n{str(e)}")
