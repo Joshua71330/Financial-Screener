@@ -14,6 +14,7 @@ class ActifFinancier:
         self.mu = None
         self.sigma = None
         self.news=[]
+        self.hit_ratio = 0.0
 
     def charger_donnees(self):
         dossier = Path(__file__).parent
@@ -310,6 +311,10 @@ class ActifFinancier:
         
         # 6. Évaluation sur les données de Test (les 20% que l'IA découvre)
         self.IA.score(X_test, y_test)
+
+        # --- AJOUT ICI : Calcul et sauvegarde du Hit Ratio pour l'interface ---
+        y_pred = self.IA.predict(X_test)
+        self.hit_ratio = float(np.sum(np.sign(y_test) == np.sign(y_pred)) / len(y_test))
     
     def predire_demain(self):
 
