@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QLineEdit, QPushButton, 
     QVBoxLayout, QWidget, QStackedWidget, QHBoxLayout, QMessageBox, 
     QSpacerItem, QSizePolicy, QTextEdit, QTabWidget, QTextBrowser, 
-    QCheckBox
+    QCheckBox, QRadioButton
 ) 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QFontDatabase
@@ -74,7 +74,7 @@ class DashboardCanvas(FigureCanvas):
         self.tooltip = self.fig.text(
             0.0, 0.0, "", 
             va="bottom", ha="left",
-            fontsize=8, color="white",
+            fontsize=8, color="#f0f0f0",
             bbox=dict(boxstyle="round,pad=0.2", fc="#2A2A2A", ec="#555555", alpha=0.9),
             zorder=100, visible=False
         )
@@ -265,14 +265,14 @@ class ScreenerWindow(QMainWindow):
             QWidget { 
                 font-family: 'Google Sans', sans-serif; 
                 background-color: #0c0c0c; 
-                color: white; 
+                color: #f0f0f0; 
             }
             QLineEdit { 
                 border: 0px transparent #555555; 
                 border-radius: 4px; 
                 padding: 5px; 
                 background-color: #1E1E1E; 
-                color: white; 
+                color: #f0f0f0; 
             }
             QLineEdit[text=""] {
                 color: #b4b4b4; 
@@ -282,13 +282,37 @@ class ScreenerWindow(QMainWindow):
                 border-radius: 4px; 
                 padding: 8px 15px; 
                 background-color: #FFFFFF; 
-                color: white; 
+                color: #f0f0f0; 
             }
             QPushButton:hover { 
                 background-color: #3A3A3A; 
             }
             QLabel { 
-                color: white; 
+                color: #f0f0f0; 
+            }
+            /* --- STYLE DES SCROLLBARS --- */
+            QScrollBar:vertical {
+                border: none;
+                background-color: #121212;
+                width: 8px; /* Un poil plus large pour laisser l'arrondi s'exprimer */
+                border-radius: 4px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #444444;
+                min-height: 30px;
+                border-radius: 4px;
+                margin: 1px; /* LA CLÉ EST ICI : cela décolle le curseur des bords et révèle l'arrondi */
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #666666;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px; 
+                border: none; /* Empêche tout artefact visuel aux extrémités */
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none; 
             }
         """)
 
@@ -300,6 +324,20 @@ class ScreenerWindow(QMainWindow):
         self.df_complet = None
         self.ticker_actuel = ""
         self.jours_actuels = 252
+        
+        # --- AJOUT ICI : Définition des polices Matplotlib ---
+        self.police_axes = {
+            'family': 'Google Sans', # Ou 'sans-serif' si Google Sans n'est pas reconnue par Matplotlib
+            'weight': 'regular',        # C'est ici que tu forces le poids (bold, medium, etc.)
+            'size': 12,
+            'color': '#f0f0f0'
+        }
+        
+        self.police_legendes = {
+            'family': 'Google Sans',
+            'weight': 'regular',
+            'size': 10,
+        }
 
         # Création des différentes vues
         self.creer_page_accueil()     # Index 0
@@ -348,7 +386,7 @@ class ScreenerWindow(QMainWindow):
             QWidget {
                 background-color: #181818; 
                 border: 0px solid transparent; 
-                border-radius: 20px; 
+                border-radius: 23px; 
             }
         """)
         
@@ -363,7 +401,8 @@ class ScreenerWindow(QMainWindow):
         self.input_ticker.setStyleSheet("""
             QLineEdit {
                 background-color: transparent; 
-                border: none; 
+                border: none;
+                color: #f0f0f0;
             }
         """)
 
@@ -403,7 +442,7 @@ class ScreenerWindow(QMainWindow):
         sidebar.setFixedWidth(350)
         sidebar.setStyleSheet("""
             QWidget { 
-                background-color: #1a1a1a; 
+                background-color: #181818; 
                 border-radius: 0px; 
                 padding-left: 10px;
                 padding-right: 10px;
@@ -412,25 +451,25 @@ class ScreenerWindow(QMainWindow):
                 font-weight: bold;
                 font-size: 15px; 
                 margin-top: 10px;
-                color: white; 
+                color: #f0f0f0; 
             }
-            QCheckBox { 
-                font-size: 15px;
-                padding: 10px; 
-                color: grey; 
+            QCheckBox, QRadioButton { 
+                font-size: 13.5px;
+                padding: 3px; 
+                color: #787878;
             }
-            QCheckBox::indicator { 
+            QCheckBox::indicator, QRadioButton::indicator { 
                 width: 10px; 
                 height: 10px; 
-                border-radius: 3px; 
-                border: 1px solid #555; 
+                border-radius: 6px; 
+                border: 1px solid #787878; 
             }
-            QCheckBox::indicator:checked { 
-                background-color: #17b978; 
+            QCheckBox::indicator:checked, QRadioButton::indicator:checked { 
+                background-color: #787878; 
             }
             QPushButton { 
                 margin: 5px; 
-                border-radius: 5px; 
+                border-radius: 10px; 
             }
         """)
         
@@ -444,7 +483,7 @@ class ScreenerWindow(QMainWindow):
         # Alignement à gauche pour bien s'intégrer dans la barre
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignLeft)
         # Modification de la couleur du texte par défaut
-        self.label_prediction.setStyleSheet("color: white;")
+        self.label_prediction.setStyleSheet("color: #f0f0f0;")
         layout_sidebar.addWidget(self.label_prediction)
 
         self.btn_switch_to_ia = QPushButton("Consulter le Rapport Détaillé IA 🤖")
@@ -457,7 +496,9 @@ class ScreenerWindow(QMainWindow):
         
         self.affichage_perf = QTextBrowser()
         self.affichage_perf.setReadOnly(True)
-        self.affichage_perf.setMaximumHeight(120) 
+        self.affichage_perf.setMinimumHeight(180)
+        self.affichage_perf.setMaximumHeight(360)
+        self.affichage_perf.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # Permet de s'étirer si besoin
         self.affichage_perf.setStyleSheet("""
             QTextBrowser {
                 background-color: #121212; 
@@ -474,11 +515,11 @@ class ScreenerWindow(QMainWindow):
         # --- SECTION : ACTUALITÉS ET FONDAMENTAL ---
         layout_sidebar.addWidget(QLabel("ACTUALITÉS ET SENTIMENT"))
 
-        self.label_ia_news = QLabel("Statut : En attente...") 
-        self.label_ia_news.setFont(QFont("Google Sans", 10, QFont.Weight.Normal))
-        self.label_ia_news.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.label_ia_news.setStyleSheet("color: #b4b4b4; margin-top: 0px;")
-        layout_sidebar.addWidget(self.label_ia_news)
+        # self.label_ia_news = QLabel("Statut : En attente...") 
+        # self.label_ia_news.setFont(QFont("Google Sans", 10, QFont.Weight.Normal))
+        # self.label_ia_news.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        # self.label_ia_news.setStyleSheet("color: #b4b4b4; margin-top: 0px;")
+        # layout_sidebar.addWidget(self.label_ia_news)
         
         self.affichage_news = QTextBrowser()
         self.affichage_news.setReadOnly(True)
@@ -529,15 +570,17 @@ class ScreenerWindow(QMainWindow):
         # --- SECTION : CONTRÔLE DE LA PÉRIODE ---
         layout_sidebar.addWidget(QLabel("PÉRIODE D'ANALYSE"))
         
-        btn_1m = QPushButton("1 Mois")
-        btn_3m = QPushButton("3 Mois")
-        btn_6m = QPushButton("6 Mois")
-        btn_1a = QPushButton("1 An")
+        btn_1m = QRadioButton("1 Mois")
+        btn_3m = QRadioButton("3 Mois")
+        btn_6m = QRadioButton("6 Mois")
+        btn_1a = QRadioButton("1 An")
         
-        btn_1m.clicked.connect(lambda: self.changer_periode(21))
-        btn_3m.clicked.connect(lambda: self.changer_periode(63))
-        btn_6m.clicked.connect(lambda: self.changer_periode(126))
-        btn_1a.clicked.connect(lambda: self.changer_periode(252))
+        btn_1a.setChecked(True)
+        
+        btn_1m.toggled.connect(lambda checked: self.changer_periode(21) if checked else None)
+        btn_3m.toggled.connect(lambda checked: self.changer_periode(63) if checked else None)
+        btn_6m.toggled.connect(lambda checked: self.changer_periode(126) if checked else None)
+        btn_1a.toggled.connect(lambda checked: self.changer_periode(252) if checked else None)
         
         layout_sidebar.addWidget(btn_1m)
         layout_sidebar.addWidget(btn_3m)
@@ -548,7 +591,20 @@ class ScreenerWindow(QMainWindow):
         
         # --- BOUTON DE RETOUR (Bas de la barre latérale) ---
         btn_accueil = QPushButton("Changer d'actif")
-        btn_accueil.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;")
+        btn_accueil.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c; 
+                color: #f0f0f0; 
+                border-radius: 15px; 
+                font-weight: bold; 
+                font-size: 15px; 
+                padding: 6px; 
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #c0392b; /* Assombrit légèrement au survol */
+            }
+        """)
         btn_accueil.clicked.connect(self.retour_accueil)
         layout_sidebar.addWidget(btn_accueil)
         
@@ -625,7 +681,7 @@ class ScreenerWindow(QMainWindow):
         btn_retour_graph.setFont(QFont("Google Sans", 10, QFont.Weight.Bold))
         btn_retour_graph.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
         
-        btn_nouveau_ticker = QPushButton("🏠 Analyser un autre actif")
+        btn_nouveau_ticker = QPushButton("Analyser un autre actif")
         btn_nouveau_ticker.clicked.connect(self.retour_accueil)
         
         layout_nav_basse.addStretch()
@@ -713,20 +769,16 @@ class ScreenerWindow(QMainWindow):
             # Gestion de l'affichage en fonction de la fiabilité du modèle
             hit_ratio_actuel = getattr(action, 'hit_ratio', 0)
             
-            if prediction is not None and hit_ratio_actuel > 0.50:
+            if prediction is not None:
                 if prediction > 0:
                     self.label_prediction.setText(f"Prédiction IA :\n📈 HAUSSE (Précision : {hit_ratio_actuel*100:.1f}%)")
                     self.label_prediction.setStyleSheet("color: #27ae60; font-weight: bold; margin-top:0px;") 
                 else:
-                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE (Précision :{hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE (Précision : {hit_ratio_actuel*100:.1f}%)")
                     self.label_prediction.setStyleSheet("color: #e74c3c; font-weight: bold; margin-top:0px;") 
             else:
-                if hit_ratio_actuel > 0:
-                    texte_blocage = f"🔒 IA non fiable\n(Précision : {hit_ratio_actuel*100:.1f}%)"
-                else:
-                    texte_blocage = "🔒 Prédiction IA\nindisponible"
-                    
-                self.label_prediction.setText(texte_blocage)
+                # Ne s'affiche que si le modèle a complètement planté et n'a sorti aucune valeur
+                self.label_prediction.setText("❌ Prédiction IA\néchouée")
                 self.label_prediction.setStyleSheet("""
                     color: #888888; 
                     background-color: #2A2A2A; 
@@ -746,7 +798,7 @@ class ScreenerWindow(QMainWindow):
         # -----------------------------------------------------------------------------------------
         # ANALYSE FONDAMENTALE (SCRAPING ACTUALITÉS)
         # -----------------------------------------------------------------------------------------
-        self.label_ia_news.setText("🔍 Analyse Lexicale en cours...")
+        # self.label_ia_news.setText("🔍 Analyse Lexicale en cours...")
         QApplication.processEvents() 
         
         try:
@@ -768,14 +820,14 @@ class ScreenerWindow(QMainWindow):
                     html_content += f"""
                     <p style="margin-top: 5px; margin-bottom: 5px;">
                         <span style="font-size: 12px;">{emoji}</span>
-                        <a href="{article['lien']}" style="font-size: 13px; font-weight: bold; text-decoration: none; color: #3498db;">
+                        <a href="{article['lien']}" style="font-size: 12px; font-weight: bold; text-decoration: none; color: #3498db;">
                             {article['titre']}
                         </a>
                     </p>
                     <hr style="background-color: #333333; height: 1px; border: none; margin-top: 8px; margin-bottom: 8px;">
                     """
             self.affichage_news.setHtml(html_content)
-            self.label_ia_news.setText("✅ Analyse Macro terminée.")
+            # self.label_ia_news.setText("✅ Analyse Macro terminée.")
             
         except urllib.error.HTTPError as e:
             html_content = f"<h4 style='color: #e74c3c;'>❌ Accès Refusé</h4><hr style='border-color: #555;'>"
@@ -789,9 +841,6 @@ class ScreenerWindow(QMainWindow):
             self.affichage_news.setHtml(html_content)
             self.label_ia_news.setText("❌ Échec de l'analyse macro.")
 
-        # -----------------------------------------------------------------------------------------
-        # FINALISATION ET MISE À JOUR VISUELLE
-        # -----------------------------------------------------------------------------------------
         # -----------------------------------------------------------------------------------------
         # FINALISATION ET MISE À JOUR VISUELLE
         # -----------------------------------------------------------------------------------------
@@ -815,7 +864,7 @@ class ScreenerWindow(QMainWindow):
             couleur_dd = "#2ecc71" if res['max_dd_strat'] < res['max_dd_bh'] else "#e0e0e0"
             
             html_perf += f"""
-            <div style='margin-bottom: 8px; font-size: 11px;'>
+            <div style='margin-bottom: 8px; font-size: 12px;'>
                 <b>{res['nom']}</b> : <span style='color: {couleur}; font-weight: bold;'>{res['performance_strategie']}%</span> 
                 <span style='color: #888;'>(B&H: {res['performance_buy_hold']}%)</span><br>
                 <span style='color: #AAA;'>↳ Trades : {res['nombre_trades']} | Sharpe : {res['sharpe_ratio']} </span><br>
@@ -927,10 +976,11 @@ class ScreenerWindow(QMainWindow):
         ax.clear()
         
         # Apparence du fond
-        ax.set_facecolor('#1e1e1e')  
-        ax.tick_params(colors='lightgray') 
+        ax.set_facecolor('#0c0c0c')  
+        ax.tick_params(colors='#f0f0f0') 
         for spine in ax.spines.values():
-            spine.set_color('#2d2d2d') 
+            spine.set_color('#181818')
+            spine.set_linewidth(1.0) 
         
         width = 0.6
         
@@ -966,9 +1016,16 @@ class ScreenerWindow(QMainWindow):
                 # Flèche rouge au dessus du prix haut
                 ax.scatter(ventes.index, ventes['High'] * 1.04, marker='v', color='#e74c3c', s=120, label='Vente (MA)', zorder=5)
 
-        ax.set_ylabel("Prix ($)")
-        ax.legend(loc="upper left")
-        ax.grid(True, alpha=0.3)
+        ax.set_ylabel("Prix ($)", color="#f0f0f0", fontdict=self.police_axes)
+        ax.legend(
+            loc="upper left", 
+            prop=self.police_legendes, 
+            labelcolor="#f0f0f0", 
+            facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
+            edgecolor='#181818',  # La couleur de la bordure de la plaque
+            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            )
+        ax.grid(True, color='#181818', linewidth=1.0)
 
 
     # ---------------------------------------------------------------------------------------------
@@ -976,17 +1033,25 @@ class ScreenerWindow(QMainWindow):
         
         ax.clear()
         
-        ax.set_facecolor('#1e1e1e')  
-        ax.tick_params(colors='lightgray') 
+        ax.set_facecolor('#0c0c0c')  
+        ax.tick_params(colors='#f0f0f0') 
         for spine in ax.spines.values():
-            spine.set_color('#2d2d2d') 
+            spine.set_color('#181818')
+            spine.set_linewidth(1.0) 
         
         if "Volatilite_20j" in df.columns:
             ax.plot(df.index, df["Volatilite_20j"], label="Volatilité (20j)", color="red")
             
-        ax.set_ylabel("Volatilité")
-        ax.legend(loc="upper left")
-        ax.grid(True, alpha=0.3)
+        ax.set_ylabel("Volatilité", color="#f0f0f0", fontdict=self.police_axes)
+        ax.legend(
+            loc="upper left", 
+            prop=self.police_legendes, 
+            labelcolor="#f0f0f0", 
+            facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
+            edgecolor='#181818',  # La couleur de la bordure de la plaque
+            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            )
+        ax.grid(True, color='#181818', linewidth=1.0)
 
 
     # ---------------------------------------------------------------------------------------------
@@ -994,10 +1059,11 @@ class ScreenerWindow(QMainWindow):
         
         ax.clear()
         
-        ax.set_facecolor('#1e1e1e')  
-        ax.tick_params(colors='lightgray') 
+        ax.set_facecolor('#0c0c0c')  
+        ax.tick_params(colors='#f0f0f0') 
         for spine in ax.spines.values():
-            spine.set_color('#2d2d2d') 
+            spine.set_color('#181818')
+            spine.set_linewidth(1.0) 
         
         if "MACD" in df.columns and "MACD_signal" in df.columns:
             
@@ -1008,9 +1074,16 @@ class ScreenerWindow(QMainWindow):
                 couleurs = ['green' if val >= 0 else 'red' for val in df["MACD_hist"]]
                 ax.bar(df.index, df["MACD_hist"], color=couleurs, alpha=0.5, label="Histogramme")
                 
-        ax.set_ylabel("MACD")
-        ax.legend(loc="upper left")
-        ax.grid(True, alpha=0.3)
+        ax.set_ylabel("MACD", color="#f0f0f0", fontdict=self.police_axes)
+        ax.legend(
+            loc="upper left", 
+            prop=self.police_legendes, 
+            labelcolor="#f0f0f0", 
+            facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
+            edgecolor='#181818',  # La couleur de la bordure de la plaque
+            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            )
+        ax.grid(True, color='#181818', linewidth=1.0)
 
 
     # ---------------------------------------------------------------------------------------------
@@ -1018,10 +1091,11 @@ class ScreenerWindow(QMainWindow):
         
         ax.clear()
         
-        ax.set_facecolor('#1e1e1e') 
-        ax.tick_params(colors='lightgray') 
+        ax.set_facecolor('#0c0c0c')  
+        ax.tick_params(colors='#f0f0f0') 
         for spine in ax.spines.values():
-            spine.set_color('#2d2d2d') 
+            spine.set_color('#181818')
+            spine.set_linewidth(1.0)
         
         if "RSI" in df.columns:
             ax.plot(df.index, df["RSI"], label="RSI", color="purple")
@@ -1046,10 +1120,17 @@ class ScreenerWindow(QMainWindow):
             if not ventes.empty:
                 ax.scatter(ventes.index, ventes['RSI'], marker='v', color='#e74c3c', s=100, zorder=5)
         
-        ax.set_ylabel("RSI")
+        ax.set_ylabel("RSI", color="#f0f0f0", fontdict=self.police_axes)
         ax.set_ylim(0, 100)
-        ax.legend(loc="upper left")
-        ax.grid(True, alpha=0.3)
+        ax.legend(
+            loc="upper left", 
+            prop=self.police_legendes, 
+            labelcolor="#f0f0f0", 
+            facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
+            edgecolor='#181818',  # La couleur de la bordure de la plaque
+            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            )
+        ax.grid(True, color='#181818', linewidth=1.0)
 
 
 
