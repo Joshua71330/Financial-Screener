@@ -295,13 +295,13 @@ class ScreenerWindow(QMainWindow):
                 border: none;
                 background-color: #121212;
                 width: 8px; /* Un poil plus large pour laisser l'arrondi s'exprimer */
-                border-radius: 4px;
+                border-radius: 3px;
                 margin: 0px;
             }
             QScrollBar::handle:vertical {
                 background-color: #444444;
                 min-height: 30px;
-                border-radius: 4px;
+                border-radius: 3px;
                 margin: 1px; /* LA CLÉ EST ICI : cela décolle le curseur des bords et révèle l'arrondi */
             }
             QScrollBar::handle:vertical:hover {
