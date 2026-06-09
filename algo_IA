@@ -61,35 +61,46 @@ class Regression_Ridge:
 class AnalyseurNews:
     def __init__(self):
         self.mots_positifs = {
-            # Mouvements de marché à la hausse
-            'raise', 'raises', 'raised', 'surge', 'surges', 'surged', 'soar', 'soars', 'soared',
-            'jump', 'jumps', 'jumped', 'rally', 'rallies', 'rallied', 'leap', 'rebound', 'recovers', 'recovery',
+            # Mouvements et Tendance
+            'accelerate', 'accelerates', 'accelerated', 'appreciate', 'appreciated', 'boom', 'booming', 
+            'boost', 'boosted', 'breakout', 'breakthrough', 'bull', 'bullish', 'bulls', 'climb', 'climbed', 
+            'double', 'doubled', 'gain', 'gained', 'gains', 'grow', 'growing', 'growth', 'high', 'higher', 
+            'hot', 'jump', 'jumped', 'jumps', 'leap', 'leaps', 'momentum', 'peak', 'peaks', 'rally', 'rallied', 
+            'rebound', 'recovers', 'recovery', 'skyrocket', 'skyrocketed', 'skyrockets', 'soar', 'soared', 
+            'soars', 'surge', 'surged', 'surges', 'triple', 'tripled', 'uptrend', 'uptrends',
             
-            # Recommandations d'analystes
-            'upgrade', 'upgrades', 'upgraded', 'bullish', 'outperform', 'buy', 'target',
+            # Fondamental, Résultats & Qualificatifs
+            'achieve', 'achieved', 'advantage', 'attractive', 'beat', 'beats', 'beaten', 'beneficial', 'benefit', 
+            'confident', 'deal', 'dividend', 'earnings', 'enhance', 'enhanced', 'exceed', 'exceeded', 'excel', 
+            'excellent', 'expand', 'expanded', 'expansion', 'favorable', 'improve', 'improved', 'improvement', 
+            'increase', 'increased', 'innovative', 'lucrative', 'optimism', 'optimistic', 'partnership', 'profit', 
+            'profitability', 'profitable', 'profits', 'promising', 'record', 'revenue', 'revenues', 'reward', 
+            'stellar', 'strong', 'stronger', 'succeed', 'success', 'successful', 'thrive', 'thriving', 'yield',
             
-            # Fondamental, Croissance & Résultats
-            'growth', 'record', 'profit', 'profitable', 'beat', 'beats', 'beaten', 'gain', 'gains', 'gained',
-            'dividend', 'strong', 'momentum', 'confident', 'acquisition', 'acquire', 'boom', 'success',
-            'expansion', 'innovative', 'partnership', 'deal', 'revenue'
+            # Recommandations
+            'buy', 'outperform', 'outperformed', 'raise', 'raised', 'raises', 'target', 'upgrade', 'upgraded', 'upgrades', 'upside'
         }
 
         self.mots_negatifs = {
-            # Mouvements de marché à la baisse
-            'cut', 'cuts', 'drop', 'drops', 'dropped', 'plunge', 'plunges', 'plunged',
-            'crash', 'crashes', 'crashed', 'slide', 'slides', 'slump', 'slumps', 'tumble', 'fall', 'falls',
+            # Mouvements et Tendance baissière
+            'bear', 'bearish', 'collapse', 'collapses', 'collapsed', 'crash', 'crashed', 'crashes', 'decline', 
+            'declined', 'declines', 'decrease', 'decreased', 'decreases', 'drop', 'dropped', 'drops', 'fall', 
+            'falling', 'falls','loser','down', 'low', 'lower', 'lowest', 'plunge', 'plunged', 'plunges', 'sink', 'sinks', 
+            'slide', 'slides', 'slump', 'slumps', 'tumble', 'tumbled', 'tumbles', 'weak', 'weaken', 'weakness',
             
-            # Recommandations d'analystes
-            'downgrade', 'downgrades', 'downgraded', 'bearish', 'underperform', 'sell',
+            # Fondamental, Alertes & Pertes
+            'bankrupt', 'bankruptcy', 'crisis', 'cut', 'cuts', 'debt', 'default', 'defaulted', 'deficit', 
+            'delay', 'delayed', 'depress', 'depressed', 'disappoint', 'disappointed', 'disappointing', 
+            'down', 'downgrade', 'downgraded', 'downgrades', 'fail', 'failed', 'failure', 'inflation', 
+            'loss', 'losses', 'miss', 'missed', 'misses', 'negative', 'pessimistic', 'recession', 'risk', 
+            'sell', 'shortfall', 'struggle', 'struggling', 'suspend', 'suspended', 'underperform', 
+            'underperformed', 'warning', 'warns', 'worse', 'worst',
             
-            # Fondamental, Risques & Résultats
-            'loss', 'losses', 'miss', 'misses', 'missed', 'weak', 'weakness', 'warning', 'warns',
-            'debt', 'default', 'bankrupt', 'bankruptcy', 'deficit', 'inflation', 'recession',
-            
-            # Légal & Scandales (impactent lourdement le cours)
-            'probe', 'lawsuit', 'sue', 'sued', 'penalty', 'fine', 'fines', 'fraud', 'investigation', 'guilty'
+            # Légal & Scandales
+            'breach', 'charge', 'charged', 'convict', 'convicted', 'fine', 'fines', 'fraud', 'fraudulent', 
+            'guilty', 'illegal', 'investigate', 'investigation', 'investigating', 'lawsuit', 'litigation', 
+            'penalty', 'probe', 'sue', 'sued', 'violation'
         }
-
     def _nettoyer_texte(self, texte):
         """Transforme le texte en minuscules et ne garde que les mots."""
         texte = texte.lower()
