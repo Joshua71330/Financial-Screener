@@ -7,6 +7,14 @@ import numpy as np
 import io
 import sys
 import urllib.error
+
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QLineEdit, QPushButton, 
+    QVBoxLayout, QWidget, QStackedWidget, QHBoxLayout, QMessageBox, 
+    QSpacerItem, QSizePolicy, QTextEdit, QTabWidget, QTextBrowser, 
+    QCheckBox, QRadioButton, QScrollArea, QProgressBar
+)
+
 from contextlib import redirect_stdout
 
 import matplotlib.pyplot as plt
@@ -258,7 +266,9 @@ class ScreenerWindow(QMainWindow):
         super().__init__()
         
         self.setWindowTitle("Scamming Land Screener")
-        self.setGeometry(100, 100, 1300, 800) 
+        self.setWindowTitle("Scamming Land Screener")
+        self.resize(1200, 800) # Taille de repli si le plein écran est quitté
+        self.showMaximized()   # <--- Force le plein écran dynamique
         
         # Application du style global (Dark Mode)
         self.setStyleSheet("""
@@ -281,7 +291,7 @@ class ScreenerWindow(QMainWindow):
                 border: 1px solid #555555; 
                 border-radius: 4px; 
                 padding: 8px 15px; 
-                background-color: #FFFFFF; 
+                background-color: #2A2A2A; /* <-- CORRIGÉ : Gris foncé au lieu de Blanc */
                 color: #f0f0f0; 
             }
             QPushButton:hover { 
@@ -427,6 +437,9 @@ class ScreenerWindow(QMainWindow):
     # ============================ PAGE 1 : DASHBOARD =============================================
     # Contient la barre latérale avec toutes les infos, et la zone de droite avec le graphe
     # =============================================================================================
+    # =============================================================================================
+    # ============================ PAGE 1 : DASHBOARD =============================================
+    # =============================================================================================
     def creer_page_dashboard(self):
         
         page = QWidget()
@@ -435,11 +448,16 @@ class ScreenerWindow(QMainWindow):
         layout_global.setSpacing(0)
         
         # -----------------------------------------------------------------------------------------
-        # BARRE LATÉRALE (Désormais plus large pour accueillir les textes)
+        # BARRE LATÉRALE AVEC SCROLL (La correction est ici)
         # -----------------------------------------------------------------------------------------
+        # 1. Création du conteneur de défilement principal
+        zone_scroll = QScrollArea()
+        zone_scroll.setFixedWidth(370) # Un peu plus large pour inclure la barre de scroll
+        zone_scroll.setWidgetResizable(True)
+        zone_scroll.setStyleSheet("QScrollArea { border: none; background-color: #181818; }")
+        
+        # 2. Ton widget sidebar classique (qui va se glisser à l'intérieur du scroll)
         sidebar = QWidget()
-        # Élargissement de la sidebar pour afficher correctement les actualités
-        sidebar.setFixedWidth(350)
         sidebar.setStyleSheet("""
             QWidget { 
                 background-color: #181818; 
@@ -480,17 +498,16 @@ class ScreenerWindow(QMainWindow):
         
         self.label_prediction = QLabel("Prédiction IA : En attente...")
         self.label_prediction.setFont(QFont("Google Sans", 12, QFont.Weight.Bold))
-        # Alignement à gauche pour bien s'intégrer dans la barre
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        # Modification de la couleur du texte par défaut
         self.label_prediction.setStyleSheet("color: #f0f0f0;")
         layout_sidebar.addWidget(self.label_prediction)
 
         self.btn_switch_to_ia = QPushButton("Consulter le Rapport Détaillé IA 🤖")
         self.btn_switch_to_ia.setFont(QFont("Google Sans", 10, QFont.Weight.Bold))
-        self.btn_switch_to_ia.setStyleSheet("background-color: #1e3d59; border: 1px solid #17b978;")
+        self.btn_switch_to_ia.setStyleSheet("background-color: #1e3d59; border: 1px solid #17b978; color: white;")
         self.btn_switch_to_ia.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(2))
         layout_sidebar.addWidget(self.btn_switch_to_ia)
+        
         # --- SECTION : PERFORMANCES STRATÉGIES ---
         layout_sidebar.addWidget(QLabel("BACKTESTING STRATÉGIES"))
         
@@ -498,7 +515,7 @@ class ScreenerWindow(QMainWindow):
         self.affichage_perf.setReadOnly(True)
         self.affichage_perf.setMinimumHeight(180)
         self.affichage_perf.setMaximumHeight(360)
-        self.affichage_perf.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # Permet de s'étirer si besoin
+        self.affichage_perf.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.affichage_perf.setStyleSheet("""
             QTextBrowser {
                 background-color: #121212; 
@@ -514,17 +531,10 @@ class ScreenerWindow(QMainWindow):
         
         # --- SECTION : ACTUALITÉS ET FONDAMENTAL ---
         layout_sidebar.addWidget(QLabel("ACTUALITÉS ET SENTIMENT"))
-
-        # self.label_ia_news = QLabel("Statut : En attente...") 
-        # self.label_ia_news.setFont(QFont("Google Sans", 10, QFont.Weight.Normal))
-        # self.label_ia_news.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        # self.label_ia_news.setStyleSheet("color: #b4b4b4; margin-top: 0px;")
-        # layout_sidebar.addWidget(self.label_ia_news)
         
         self.affichage_news = QTextBrowser()
         self.affichage_news.setReadOnly(True)
         self.affichage_news.setOpenExternalLinks(True)
-        # On donne une hauteur confortable mais limitée à la zone d'actualité
         self.affichage_news.setMaximumHeight(200) 
         self.affichage_news.setStyleSheet("""
             QTextBrowser {
@@ -602,7 +612,7 @@ class ScreenerWindow(QMainWindow):
                 border: none;
             }
             QPushButton:hover {
-                background-color: #c0392b; /* Assombrit légèrement au survol */
+                background-color: #c0392b; 
             }
         """)
         btn_accueil.clicked.connect(self.retour_accueil)
@@ -610,12 +620,14 @@ class ScreenerWindow(QMainWindow):
         
         
         # -----------------------------------------------------------------------------------------
-        # ZONE PRINCIPALE (Droite) : Uniquement le titre et les graphiques
+        # ASSEMBLAGE DE LA ZONE GAUCHE (Scroll) ET DROITE (Graphiques)
         # -----------------------------------------------------------------------------------------
+        # On insère la sidebar dans la zone de scroll
+        zone_scroll.setWidget(sidebar)
+        
         zone_droite = QWidget()
         layout_droite = QVBoxLayout(zone_droite)
         layout_droite.setContentsMargins(10, 40, 10, 5)
-        
         layout_droite.setSpacing(0)
         
         self.label_titre_dashboard = QLabel("Tableau de bord technique")
@@ -631,12 +643,11 @@ class ScreenerWindow(QMainWindow):
         self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout_droite.addWidget(self.canvas)
         
-        # Assemblage final de la page
-        layout_global.addWidget(sidebar)
+        # Assemblage final de la page (On ajoute zone_scroll au lieu de sidebar)
+        layout_global.addWidget(zone_scroll)
         layout_global.addWidget(zone_droite)
         
         self.stacked_widget.addWidget(page)
-
 
     # =============================================================================================
     # ============================ PAGE 2 : RAPPORT IA ============================================
@@ -771,10 +782,10 @@ class ScreenerWindow(QMainWindow):
             
             if prediction is not None:
                 if prediction > 0:
-                    self.label_prediction.setText(f"Prédiction IA :\n📈 HAUSSE (Précision : {hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"📈 (IA) Tendance Haussière\n Edge Statistique : +{(hit_ratio_actuel * 100) - 50:.2f}%")
                     self.label_prediction.setStyleSheet("color: #27ae60; font-weight: bold; margin-top:0px;") 
                 else:
-                    self.label_prediction.setText(f"Prédiction IA :\n📉 BAISSE (Précision : {hit_ratio_actuel*100:.1f}%)")
+                    self.label_prediction.setText(f"📉 (IA) Tendance Baissière \n Edge Statistique : {(hit_ratio_actuel*100) - 50:.2f}%")
                     self.label_prediction.setStyleSheet("color: #e74c3c; font-weight: bold; margin-top:0px;") 
             else:
                 # Ne s'affiche que si le modèle a complètement planté et n'a sorti aucune valeur
@@ -1055,6 +1066,7 @@ class ScreenerWindow(QMainWindow):
 
 
     # ---------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------
     def dessiner_macd(self, ax, df, ticker):
         
         ax.clear()
@@ -1074,18 +1086,27 @@ class ScreenerWindow(QMainWindow):
                 couleurs = ['green' if val >= 0 else 'red' for val in df["MACD_hist"]]
                 ax.bar(df.index, df["MACD_hist"], color=couleurs, alpha=0.5, label="Histogramme")
                 
+        if "Signal_MACD" in df.columns:
+            achats = df[df['Signal_MACD'] == 1]
+            ventes = df[df['Signal_MACD'] == -1]
+            if not achats.empty:
+                ax.scatter(achats.index, achats['MACD'], marker='^', color='#2ecc71', s=120, zorder=5)
+            if not ventes.empty:
+                ax.scatter(ventes.index, ventes['MACD'], marker='v', color='#e74c3c', s=120, zorder=5)
+                
         ax.set_ylabel("MACD", color="#f0f0f0", fontdict=self.police_axes)
         ax.legend(
             loc="upper left", 
             prop=self.police_legendes, 
             labelcolor="#f0f0f0", 
-            facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
-            edgecolor='#181818',  # La couleur de la bordure de la plaque
-            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            facecolor='#181818', 
+            edgecolor='#181818', 
+            framealpha=1.0        
             )
         ax.grid(True, color='#181818', linewidth=1.0)
 
 
+    # ---------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------
     def dessiner_rsi(self, ax, df, ticker):
         
@@ -1102,23 +1123,18 @@ class ScreenerWindow(QMainWindow):
             ax.axhline(70, color='red', linestyle='--', alpha=0.5)
             ax.axhline(30, color='green', linestyle='--', alpha=0.5)
             ax.fill_between(df.index, y1=30, y2=70, color='purple', alpha=0.05)
-        # Affichage des signaux MACD
-        if "Signal_MACD" in df.columns:
-            achats = df[df['Signal_MACD'] == 1]
-            ventes = df[df['Signal_MACD'] == -1]
-            if not achats.empty:
-                ax.scatter(achats.index, achats['MACD'], marker='^', color='#2ecc71', s=100, zorder=5)
-            if not ventes.empty:
-                ax.scatter(ventes.index, ventes['MACD'], marker='v', color='#e74c3c', s=100, zorder=5)
-        
-        # Affichage des signaux RSI
+            
+        # --- CORRECTION : Seuls les signaux RSI sont affichés ici ---
         if "Signal_RSI" in df.columns:
             achats = df[df['Signal_RSI'] == 1]
             ventes = df[df['Signal_RSI'] == -1]
+            
+            # Petite astuce : on décale légèrement les flèches (-5 / +5) pour qu'elles 
+            # ne cachent pas la courbe violette
             if not achats.empty:
-                ax.scatter(achats.index, achats['RSI'], marker='^', color='#2ecc71', s=100, zorder=5)
+                ax.scatter(achats.index, achats['RSI'] - 5, marker='^', color='#2ecc71', s=120, zorder=5)
             if not ventes.empty:
-                ax.scatter(ventes.index, ventes['RSI'], marker='v', color='#e74c3c', s=100, zorder=5)
+                ax.scatter(ventes.index, ventes['RSI'] + 5, marker='v', color='#e74c3c', s=120, zorder=5)
         
         ax.set_ylabel("RSI", color="#f0f0f0", fontdict=self.police_axes)
         ax.set_ylim(0, 100)
@@ -1126,12 +1142,11 @@ class ScreenerWindow(QMainWindow):
             loc="upper left", 
             prop=self.police_legendes, 
             labelcolor="#f0f0f0", 
-            facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
-            edgecolor='#181818',  # La couleur de la bordure de la plaque
-            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
-            )
+            facecolor='#181818',
+            edgecolor='#181818',
+            framealpha=1.0
+        )
         ax.grid(True, color='#181818', linewidth=1.0)
-
 
 
 # =================================================================================================
