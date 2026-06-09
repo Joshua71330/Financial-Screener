@@ -375,3 +375,4 @@ if __name__ == "__main__":
         # 2. Entraînement de l'IA (va afficher les stats R2, MAE, Hit Ratio)
         action.entrainer_IA()
         action.predire_demain()
+        
