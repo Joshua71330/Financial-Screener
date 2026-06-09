@@ -8,6 +8,7 @@ Classes testées :
   - TestRegressionRidge   (algos_IA.py)
   - TestActifFinancier    (modeles.py)
   - TestStrategies        (strategies.py)
+  - TestAnalyseurNews     (algos_IA.py)
 """
 
 import unittest
@@ -349,7 +350,8 @@ class TestAnalyseurNews(unittest.TestCase):
 
     def test_calculer_sentiment_positif(self):
         """Une phrase avec des mots positifs doit renvoyer 🟢 POSITIF."""
-        texte = "L'entreprise annonce une forte hausse et un profit record ce trimestre."
+        # Correction : Phrase en anglais pour correspondre au lexique de l'IA
+        texte = "The company reported a record profit and strong growth this quarter."
         sentiment, confiance = self.analyseur.calculer_sentiment(texte)
         
         self.assertEqual(sentiment, "🟢 POSITIF")
@@ -357,7 +359,8 @@ class TestAnalyseurNews(unittest.TestCase):
 
     def test_calculer_sentiment_negatif(self):
         """Une phrase avec des mots négatifs doit renvoyer 🔴 NÉGATIF."""
-        texte = "La chute des marchés provoque une baisse et une perte financière."
+        # Correction : Phrase en anglais avec les mots 'crash', 'drop', 'loss'
+        texte = "The market crash causes a massive drop and a huge financial loss."
         sentiment, confiance = self.analyseur.calculer_sentiment(texte)
         
         self.assertEqual(sentiment, "🔴 NÉGATIF")
@@ -365,7 +368,8 @@ class TestAnalyseurNews(unittest.TestCase):
 
     def test_calculer_sentiment_neutre(self):
         """Une phrase sans mots du lexique doit renvoyer ⚪ NEUTRE avec 0% de confiance."""
-        texte = "Le PDG a mangé une pomme à la cantine."
+        # Correction : Phrase en anglais sans mots financiers de la liste
+        texte = "The CEO ate an apple at the cafeteria."
         sentiment, confiance = self.analyseur.calculer_sentiment(texte)
         
         self.assertEqual(sentiment, "⚪ NEUTRE")
@@ -404,17 +408,16 @@ class TestAnalyseurNews(unittest.TestCase):
     @patch('urllib.request.urlopen')
     def test_scraper_news_yahoo_erreur_reseau(self, mock_urlopen):
         """
-        Si Yahoo renvoie une erreur (ex: 404), le scraper ne doit pas faire 
-        planter le programme entier, il doit juste renvoyer une liste vide.
+        Si Yahoo renvoie une erreur (ex: 404 ou erreur de connexion), 
+        le scraper DOIT laisser remonter l'exception pour qu'elle soit gérée 
+        par l'interface (app.py).
         """
         # On force la fausse connexion internet à planter
         mock_urlopen.side_effect = urllib.error.URLError("Not Found")
         
-        # Le code ne doit pas lever d'exception non gérée
-        resultats = self.analyseur.scraper_news_yahoo("FAKE_TICKER")
-        
-        # La liste doit être vide
-        self.assertEqual(resultats, [])
+        # On vérifie que l'exception est bien levée (et non masquée)
+        with self.assertRaises(urllib.error.URLError):
+            self.analyseur.scraper_news_yahoo("FAKE_TICKER")
 
 
 # ═══════════════════════════════════════════════════════════════
