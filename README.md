@@ -1,0 +1,2 @@
+This project is a comprehensive desktop application designed for algorithmic financial asset analysis and machine learning prediction. Built entirely in Python, it combines classic technical analysis with a custom-built artificial intelligence model to evaluate stock market opportunities.  
+For full technical details, architectural diagrams, and mathematical implementations, please refer to the verbatim project report
