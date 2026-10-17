@@ -20,7 +20,7 @@ Financial Screener est une application de bureau écrite entièrement en Python 
 
 Le rapport technique complet (méthodologie, formules mathématiques, architecture) est disponible dans [`Rapport Screener_IA_FINAL-1.pdf`](./Rapport%20Screener_IA_FINAL-1.pdf).
 
-### ✨ Fonctionnalités
+### Fonctionnalités
 
 - **Interface graphique (PyQt6)** : recherche d'un ticker, tableaux de bord et graphiques interactifs (zoom, survol).
 - **Indicateurs techniques** : SMA, EMA, RSI, MACD, volatilité historique annualisée.
@@ -30,7 +30,7 @@ Le rapport technique complet (méthodologie, formules mathématiques, architectu
 - **Analyseur de news** (`AnalyseurNews`) pour intégrer un signal texte à l'analyse.
 - **Suite de tests unitaires** (`unittest`) couvrant le modèle de régression, la classe `ActifFinancier` et les stratégies.
 
-### 🧱 Stack technique
+### Stack technique
 
 | Domaine | Outils |
 |---|---|
@@ -40,7 +40,7 @@ Le rapport technique complet (méthodologie, formules mathématiques, architectu
 | IA | Régression Ridge implémentée à la main (NumPy) |
 | Tests | `unittest` |
 
-### 📁 Structure du projet
+### Structure du projet
 
 ```
 Financial-Screener/
@@ -57,7 +57,7 @@ Financial-Screener/
 
 > ⚠️ **Note de mise à jour** : dans le dépôt original, ces fichiers n'avaient pas l'extension `.py` et une incohérence de nom (`gestion_donnee` vs `gestion_donnees` importé ailleurs) empêchait le projet de se lancer. Cette version corrige les deux problèmes — voir `GUIDE_ORGANISATION.md` fourni séparément pour appliquer le correctif sur le dépôt GitHub.
 
-### 🚀 Installation
+### Installation
 
 ```bash
 git clone https://github.com/Joshua71330/Financial-Screener.git
@@ -65,7 +65,7 @@ cd Financial-Screener
 pip install -r requirements.txt
 ```
 
-### ▶️ Utilisation
+### Utilisation
 
 ```bash
 python main.py
@@ -79,7 +79,7 @@ Pour lancer les tests :
 python -m unittest tests_unitaires -v
 ```
 
-### 👥 Auteurs
+### Auteurs
 
 Projet réalisé par **Kéziah Daull** et **Joshua Fadel**.
 
@@ -93,7 +93,7 @@ Financial Screener is a desktop application, written entirely in Python, that co
 
 The full technical report (methodology, math, architecture) is available in [`Rapport Screener_IA_FINAL-1.pdf`](./Rapport%20Screener_IA_FINAL-1.pdf).
 
-### ✨ Features
+### Features
 
 - **Graphical interface (PyQt6)**: ticker search, dashboards and interactive charts (zoom, hover tooltips).
 - **Technical indicators**: SMA, EMA, RSI, MACD, annualized historical volatility.
@@ -103,7 +103,7 @@ The full technical report (methodology, math, architecture) is available in [`Ra
 - **News analyzer** (`AnalyseurNews`) to fold a text-based signal into the analysis.
 - **Unit test suite** (`unittest`) covering the regression model, the `ActifFinancier` class, and the strategies.
 
-### 🧱 Tech stack
+### Tech stack
 
 | Area | Tools |
 |---|---|
@@ -113,7 +113,7 @@ The full technical report (methodology, math, architecture) is available in [`Ra
 | AI | Hand-rolled Ridge regression (NumPy) |
 | Testing | `unittest` |
 
-### 📁 Project structure
+### Project structure
 
 ```
 Financial-Screener/
@@ -130,7 +130,7 @@ Financial-Screener/
 
 > ⚠️ **Update note**: in the original repository these files had no `.py` extension, and a naming mismatch (`gestion_donnee` vs. the `gestion_donnees` import used elsewhere) prevented the project from running at all. This version fixes both issues — see the separate `GUIDE_ORGANISATION.md` for how to apply the fix on GitHub.
 
-### 🚀 Installation
+### Installation
 
 ```bash
 git clone https://github.com/Joshua71330/Financial-Screener.git
@@ -138,7 +138,7 @@ cd Financial-Screener
 pip install -r requirements.txt
 ```
 
-### ▶️ Usage
+### Usage
 
 ```bash
 python main.py
@@ -152,6 +152,6 @@ Run the tests:
 python -m unittest tests_unitaires -v
 ```
 
-### 👥 Authors
+### Authors
 
 Built by **Kéziah Daull** and **Joshua Fadel**.
