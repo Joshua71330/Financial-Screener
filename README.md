@@ -2,7 +2,6 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt)](https://pypi.org/project/PyQt6/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Status](https://img.shields.io/badge/status-projet%20acad%C3%A9mique-orange)]()
 
 > 🇫🇷 Application de bureau pour l'analyse technique et la prédiction algorithmique d'actifs financiers, avec un moteur d'IA développé from scratch.
@@ -25,8 +24,9 @@ Le rapport technique complet (méthodologie, formules mathématiques, architectu
 - **Interface graphique (PyQt6)** : recherche d'un ticker, tableaux de bord et graphiques interactifs (zoom, survol).
 - **Indicateurs techniques** : SMA, EMA, RSI, MACD, volatilité historique annualisée.
 - **Téléchargement de données** automatique via `yfinance`, avec mise en cache locale en CSV.
-- **Modèle d'IA maison** : régression Ridge codée sans framework de ML, pour prédire les rendements à partir de features techniques (distance à la SMA/EMA, volatilité, RSI, volume normalisé).
-- **Stratégies de trading** orientées objet (classe abstraite `Strategie` + sous-classes croisement de moyennes mobiles, RSI, MACD) avec calcul de performance (rendement, nombre de trades, etc.).
+- **Modèle d'IA maison** : régression Ridge codée sans framework de ML (forme fermée, NumPy), pour prédire le rendement du lendemain à partir de features techniques (distance à la SMA/EMA, volatilité 20 j, RSI de Wilder, z-score du volume). Découpage chronologique 80/20, standardisation calculée uniquement sur l'entraînement, choix de la régularisation par grille, évaluation par R², MAE et taux de bonne direction (hit ratio).
+- **Stratégies de trading** orientées objet (classe abstraite `Strategie` + sous-classes croisement de moyennes mobiles, RSI, MACD), backtestées contre le buy & hold : rendement, nombre de trades, **ratio de Sharpe** annualisé et **max drawdown**. Les ordres sont exécutés le lendemain du signal pour éviter le biais de look-ahead.
+- **Analyse des options (GEX)** : profil d'exposition gamma des market makers calculé à partir du gamma de Black–Scholes sur la chaîne d'options, niveau zero-gamma, max pain et calendrier des échéances (OpEx), utilisés comme filtre de régime pour la stratégie RSI.
 - **Analyseur de news** (`AnalyseurNews`) pour intégrer un signal texte à l'analyse.
 - **Suite de tests unitaires** (`unittest`) couvrant le modèle de régression, la classe `ActifFinancier` et les stratégies.
 
@@ -37,7 +37,7 @@ Le rapport technique complet (méthodologie, formules mathématiques, architectu
 | Langage | Python 3.10+ |
 | Interface | PyQt6, Matplotlib (embarqué via `FigureCanvasQTAgg`) |
 | Données | pandas, NumPy, yfinance |
-| IA | Régression Ridge implémentée à la main (NumPy) |
+| IA / quant | Régression Ridge implémentée à la main (NumPy), gamma de Black–Scholes (SciPy) |
 | Tests | `unittest` |
 
 ### Structure du projet
@@ -51,11 +51,10 @@ Financial-Screener/
 ├── algos_IA.py               # Régression Ridge + analyseur de news
 ├── gestion_donnees.py        # Téléchargement et cache des données (yfinance)
 ├── courbes.py                 # Script autonome de tracé de tableaux de bord
-├── tests_unitaires.py        # Suite de tests unitaires
+├── tests_unitaires.py        # Suite de tests unitaires (30 tests)
+├── docs/architecture.md      # Diagramme de classes (Mermaid)
 └── Rapport Screener_IA_FINAL-1.pdf   # Rapport technique complet
 ```
-
-> ⚠️ **Note de mise à jour** : dans le dépôt original, ces fichiers n'avaient pas l'extension `.py` et une incohérence de nom (`gestion_donnee` vs `gestion_donnees` importé ailleurs) empêchait le projet de se lancer. Cette version corrige les deux problèmes — voir `GUIDE_ORGANISATION.md` fourni séparément pour appliquer le correctif sur le dépôt GitHub.
 
 ### Installation
 
@@ -98,8 +97,9 @@ The full technical report (methodology, math, architecture) is available in [`Ra
 - **Graphical interface (PyQt6)**: ticker search, dashboards and interactive charts (zoom, hover tooltips).
 - **Technical indicators**: SMA, EMA, RSI, MACD, annualized historical volatility.
 - **Automatic data download** via `yfinance`, with local CSV caching.
-- **Custom AI model**: a Ridge regression built without any ML framework, predicting returns from technical features (distance to SMA/EMA, volatility, RSI, normalized volume).
-- **Object-oriented trading strategies** (abstract `Strategie` base class + moving-average-crossover, RSI, and MACD subclasses) with performance metrics (return, number of trades, etc.).
+- **Custom AI model**: a Ridge regression built without any ML framework (closed form, NumPy), predicting next-day returns from technical features (distance to SMA/EMA, 20-day volatility, Wilder RSI, volume z-score). Chronological 80/20 split, standardization fitted on the training set only, grid search over the regularization strength, evaluation with R², MAE and directional hit ratio.
+- **Object-oriented trading strategies** (abstract `Strategie` base class + moving-average-crossover, RSI, and MACD subclasses), backtested against buy & hold: total return, number of trades, annualized **Sharpe ratio** and **maximum drawdown**. Orders are executed the day after the signal to avoid look-ahead bias.
+- **Options analytics (GEX)**: dealer gamma exposure profile computed from Black–Scholes gamma over the option chain, zero-gamma level, max pain and expiry (OpEx) calendar, used as a regime filter for the RSI strategy.
 - **News analyzer** (`AnalyseurNews`) to fold a text-based signal into the analysis.
 - **Unit test suite** (`unittest`) covering the regression model, the `ActifFinancier` class, and the strategies.
 
@@ -110,7 +110,7 @@ The full technical report (methodology, math, architecture) is available in [`Ra
 | Language | Python 3.10+ |
 | UI | PyQt6, Matplotlib (embedded via `FigureCanvasQTAgg`) |
 | Data | pandas, NumPy, yfinance |
-| AI | Hand-rolled Ridge regression (NumPy) |
+| AI / quant | Hand-rolled Ridge regression (NumPy), Black–Scholes gamma (SciPy) |
 | Testing | `unittest` |
 
 ### Project structure
@@ -124,11 +124,10 @@ Financial-Screener/
 ├── algos_IA.py               # Ridge regression + news analyzer
 ├── gestion_donnees.py        # Data download and caching (yfinance)
 ├── courbes.py                 # Standalone dashboard-plotting script
-├── tests_unitaires.py        # Unit test suite
+├── tests_unitaires.py        # Unit test suite (30 tests)
+├── docs/architecture.md      # Class diagram (Mermaid)
 └── Rapport Screener_IA_FINAL-1.pdf   # Full technical report
 ```
-
-> ⚠️ **Update note**: in the original repository these files had no `.py` extension, and a naming mismatch (`gestion_donnee` vs. the `gestion_donnees` import used elsewhere) prevented the project from running at all. This version fixes both issues — see the separate `GUIDE_ORGANISATION.md` for how to apply the fix on GitHub.
 
 ### Installation
 

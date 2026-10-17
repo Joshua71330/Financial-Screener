@@ -109,7 +109,7 @@ class AnalyseurNews:
         return mots
 
     def calculer_sentiment(self, texte):
-        """Calcule un score basé sur l'apparition des mots de ton lexique."""
+        """Calcule un score basé sur l'apparition des mots du lexique."""
         mots = self._nettoyer_texte(texte)
         if not mots:
             return "⚪ NEUTRE", 0.0

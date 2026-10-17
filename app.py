@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QLineEdit, QPushButton, 
     QVBoxLayout, QWidget, QStackedWidget, QHBoxLayout, QMessageBox, 
     QSpacerItem, QSizePolicy, QTextEdit, QTabWidget, QTextBrowser, 
-    QCheckBox, QRadioButton, QScrollArea, QProgressBar
+    QCheckBox, QRadioButton, QScrollArea, QProgressBar, QDialog, QFrame
 )
 
 from contextlib import redirect_stdout
@@ -256,6 +256,301 @@ class DashboardCanvas(FigureCanvas):
 
 
 # =================================================================================================
+# ============================ CLASSE : GEX CANVAS =================================================
+# Canevas Matplotlib dédié au profil de Gamma Exposure (graphique en barres horizontales par strike)
+# =================================================================================================
+
+class GexCanvas(FigureCanvas):
+    """
+    Affiche le profil de Gamma Exposure (GEX) par strike sous forme de barres horizontales.
+    Les barres vertes représentent un GEX net positif (zone de compression / résistance probable),
+    les barres rouges un GEX net négatif (zone d'expansion / support probable).
+    Le survol d'une barre affiche une bulle d'information avec le strike et la valeur exacte.
+    """
+
+    def __init__(self, parent=None, width=7, height=7, dpi=100):
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        self.fig.patch.set_facecolor('#0c0c0c')
+        super().__init__(self.fig)
+
+        self.ax = self.fig.add_subplot(111)
+
+        # Données courantes (mises à jour à chaque dessin)
+        self.strikes = []
+        self.valeurs = []
+
+        self.fig.canvas.mpl_connect('motion_notify_event', self.survol_barre)
+
+        self.tooltip = self.fig.text(
+            0.0, 0.0, "",
+            va="bottom", ha="left",
+            fontsize=9, color="#f0f0f0",
+            bbox=dict(boxstyle="round,pad=0.3", fc="#2A2A2A", ec="#555555", alpha=0.95),
+            zorder=100, visible=False
+        )
+
+    # ---------------------------------------------------------------------------------------------
+    def survol_barre(self, event):
+
+        if event.inaxes != self.ax or not self.strikes:
+            if self.tooltip.get_visible():
+                self.tooltip.set_visible(False)
+                self.fig.canvas.draw_idle()
+            return
+
+        try:
+            idx = int(round(event.ydata))
+            if idx < 0 or idx >= len(self.strikes):
+                raise IndexError
+
+            # Tolérance verticale : on n'affiche la bulle que si on survole bien la barre
+            if abs(event.ydata - idx) > 0.45:
+                if self.tooltip.get_visible():
+                    self.tooltip.set_visible(False)
+                    self.fig.canvas.draw_idle()
+                return
+
+            strike = self.strikes[idx]
+            valeur = self.valeurs[idx]
+            nature = "Compression (Résistance)" if valeur >= 0 else "Expansion (Support)"
+
+            texte = f"Strike : {strike:.1f} $\nGEX net : {valeur:,.2f} M$\n{nature}"
+
+            fig_w, fig_h = self.fig.get_size_inches() * self.fig.dpi
+            pos_x = (event.x + 15) / fig_w
+            pos_y = (event.y + 15) / fig_h
+            if pos_x > 0.7: pos_x = (event.x - 140) / fig_w
+            if pos_y > 0.85: pos_y = (event.y - 70) / fig_h
+
+            nouvelle_position = (pos_x, pos_y)
+            if not self.tooltip.get_visible() or self.tooltip.get_text() != texte or self.tooltip.get_position() != nouvelle_position:
+                self.tooltip.set_text(texte)
+                self.tooltip.set_position(nouvelle_position)
+                self.tooltip.set_visible(True)
+                self.fig.canvas.draw_idle()
+
+        except Exception:
+            if self.tooltip.get_visible():
+                self.tooltip.set_visible(False)
+                self.fig.canvas.draw_idle()
+
+
+# =================================================================================================
+# ============================ CLASSE : FENÊTRE GEX (CLICABLE) ====================================
+# Fenêtre indépendante détaillant le profil complet du Gamma Exposure, avec les niveaux clés
+# de Résistance (Call Wall), de Support (Put Wall), de Zero Gamma et de Max Pain.
+# =================================================================================================
+
+class FenetreGEX(QDialog):
+    """
+    Fenêtre clicable (ouverte via un bouton du tableau de bord) qui affiche :
+      - Un graphique en barres horizontales du GEX net par strike.
+      - Des repères horizontaux pour le Spot, la Résistance, le Support, le Zero Gamma et le Max Pain.
+      - Un panneau latéral résumant ces niveaux et le régime de volatilité actuel.
+    """
+
+    def __init__(self, ticker, donnees_gex, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle(f"Profil Gamma Exposure (GEX) — {ticker}")
+        self.resize(1050, 740)
+        self.setStyleSheet("""
+            QDialog { background-color: #0c0c0c; }
+            QLabel { color: #f0f0f0; }
+        """)
+
+        d = donnees_gex
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(8)
+
+        # --- En-tête ---
+        titre = QLabel(f"📊 Profil de Gamma Exposure — {ticker}")
+        titre.setFont(QFont("Google Sans", 17, QFont.Weight.Bold))
+        titre.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(titre)
+
+        date_exp = d.get('date_expiration')
+        sous_titre = QLabel(f"Échéance analysée : {date_exp if date_exp else 'Indisponible'}")
+        sous_titre.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        sous_titre.setStyleSheet("color: #888888; font-size: 11px; font-weight: normal; margin-top: 0px;")
+        layout.addWidget(sous_titre)
+
+        ligne_separatrice = QFrame()
+        ligne_separatrice.setFrameShape(QFrame.Shape.HLine)
+        ligne_separatrice.setStyleSheet("background-color: #2A2A2A; max-height: 1px; border: none;")
+        layout.addWidget(ligne_separatrice)
+        layout.addSpacing(8)
+
+        # --- Zone centrale : graphique (gauche) + panneau de niveaux clés (droite) ---
+        zone_centrale = QHBoxLayout()
+        zone_centrale.setSpacing(15)
+
+        self.canvas = GexCanvas(self, width=7, height=7, dpi=100)
+        zone_centrale.addWidget(self.canvas, 3)
+
+        panneau = QTextBrowser()
+        panneau.setReadOnly(True)
+        panneau.setFixedWidth(270)
+        panneau.setStyleSheet("""
+            QTextBrowser {
+                background-color: #181818;
+                color: #e0e0e0;
+                border: 1px solid #333333;
+                border-radius: 8px;
+                padding: 12px;
+            }
+        """)
+        panneau.setHtml(self._construire_html_niveaux(d))
+        zone_centrale.addWidget(panneau, 1)
+
+        layout.addLayout(zone_centrale)
+
+        # --- Bouton de fermeture ---
+        layout_btn = QHBoxLayout()
+        layout_btn.addStretch()
+        btn_fermer = QPushButton("Fermer")
+        btn_fermer.setFixedWidth(130)
+        btn_fermer.clicked.connect(self.close)
+        layout_btn.addWidget(btn_fermer)
+        layout_btn.addStretch()
+        layout.addLayout(layout_btn)
+
+        self._dessiner_profil(d)
+
+    # ---------------------------------------------------------------------------------------------
+    @staticmethod
+    def _fmt_prix(valeur):
+        return f"{valeur:.1f} $" if valeur is not None else "N/A"
+
+    # ---------------------------------------------------------------------------------------------
+    def _construire_html_niveaux(self, d):
+
+        gex_par_strike = d.get('gex_par_strike') or {}
+        spot       = d.get('spot')
+        max_pain   = d.get('max_pain')
+        zero_gamma = d.get('zero_gamma')
+        call_wall  = d.get('call_wall')
+        put_wall   = d.get('put_wall')
+        gex_total  = d.get('gex_total')
+
+        if not gex_par_strike:
+            return """
+            <h3 style='color:#3498db; margin-top:0;'>Niveaux Clés</h3>
+            <hr style='border-color:#444;'>
+            <p style='color:#e74c3c; font-size:13px;'>
+            ❌ Aucune chaîne d'options disponible pour cet actif.<br><br>
+            Le profil GEX ne peut pas être calculé (ticker sans options listées, ou chaîne vide côté Yahoo Finance).
+            </p>
+            """
+
+        if gex_total is not None and gex_total > 0:
+            regime, couleur_regime = "🟢 Compression (Pro-MM)", "#27ae60"
+        elif gex_total is not None and gex_total < 0:
+            regime, couleur_regime = "🔴 Expansion (Anti-MM)", "#e74c3c"
+        else:
+            regime, couleur_regime = "Indisponible", "#888888"
+
+        gex_total_txt = f"{gex_total / 1_000_000:,.2f} M$" if gex_total is not None else "N/A"
+
+        return f"""
+        <h3 style='color:#3498db; margin-top:0;'>Niveaux Clés</h3>
+        <hr style='border-color:#444;'>
+        <p><b style='color:#f0f0f0;'>📍 Prix Spot :</b><br>{self._fmt_prix(spot)}</p>
+        <p><b style='color:#2ecc71;'>🟩 Résistance (Call Wall) :</b><br>{self._fmt_prix(call_wall)}</p>
+        <p><b style='color:#e74c3c;'>🟥 Support (Put Wall) :</b><br>{self._fmt_prix(put_wall)}</p>
+        <p><b style='color:#bdc3c7;'>⚖️ Zero Gamma Level :</b><br>{self._fmt_prix(zero_gamma)}</p>
+        <p><b style='color:#f39c12;'>🎯 Max Pain :</b><br>{self._fmt_prix(max_pain)}</p>
+        <hr style='border-color:#444;'>
+        <p><b style='color:{couleur_regime};'>Régime actuel :</b><br>{regime}</p>
+        <p style='font-size:11px; color:#888;'>GEX Total : {gex_total_txt}</p>
+        <hr style='border-color:#444;'>
+        <p style='font-size:11px; color:#999; line-height:1.4;'>
+        💡 <b>Lecture :</b> Au-dessus du Zero Gamma, les Market Makers amortissent les mouvements 
+        (volatilité écrasée). En-dessous, ils les amplifient (risque d'accélération). La Résistance 
+        et le Support marquent les strikes où leur couverture est la plus dense.
+        </p>
+        """
+
+    # ---------------------------------------------------------------------------------------------
+    def _dessiner_profil(self, d):
+
+        ax = self.canvas.ax
+        ax.clear()
+        ax.set_facecolor('#0c0c0c')
+        ax.tick_params(colors='#f0f0f0')
+        for spine in ax.spines.values():
+            spine.set_color('#333333')
+
+        gex_par_strike = d.get('gex_par_strike') or {}
+
+        if not gex_par_strike:
+            ax.text(0.5, 0.5, "Aucune donnée d'options disponible",
+                    color='#888888', fontsize=12, ha='center', va='center', transform=ax.transAxes)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            self.canvas.draw()
+            return
+
+        spot = d.get('spot')
+
+        # On limite l'affichage à une fenêtre pertinente autour du prix actuel pour garder
+        # un graphique lisible, tout en s'assurant d'inclure les niveaux clés (murs, max pain...).
+        niveaux_cles = [v for v in [spot, d.get('call_wall'), d.get('put_wall'),
+                                     d.get('zero_gamma'), d.get('max_pain')] if v]
+        tous_strikes = sorted(gex_par_strike.keys())
+
+        if niveaux_cles and spot:
+            marge = max(spot * 0.25, 5)
+            borne_min = min(niveaux_cles) - marge
+            borne_max = max(niveaux_cles) + marge
+            strikes_filtres = [s for s in tous_strikes if borne_min <= s <= borne_max]
+            strikes = strikes_filtres if strikes_filtres else tous_strikes
+        else:
+            strikes = tous_strikes
+
+        valeurs = [gex_par_strike[k] / 1_000_000 for k in strikes]  # en millions de $
+
+        self.canvas.strikes = strikes
+        self.canvas.valeurs = valeurs
+
+        couleurs = ['#2ecc71' if v >= 0 else '#e74c3c' for v in valeurs]
+        y_pos = list(range(len(strikes)))
+
+        ax.barh(y_pos, valeurs, color=couleurs, edgecolor='none', height=0.7, zorder=3)
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels([f"{s:.1f}" for s in strikes], fontsize=8)
+        ax.axvline(0, color='#555555', linewidth=1, zorder=2)
+
+        # --- Repères horizontaux pour les niveaux clés (indexés sur la position du strike le + proche) ---
+        def _ligne_niveau(valeur, couleur, nom):
+            if valeur is None or not strikes:
+                return
+            idx_proche = min(range(len(strikes)), key=lambda i: abs(strikes[i] - valeur))
+            ax.axhline(idx_proche, color=couleur, linestyle='--', linewidth=1.7,
+                       alpha=0.9, zorder=4, label=f"{nom} ({valeur:.1f} $)")
+
+        _ligne_niveau(spot, '#f0f0f0', "Spot")
+        _ligne_niveau(d.get('call_wall'), '#2ecc71', "Résistance")
+        _ligne_niveau(d.get('put_wall'), '#e74c3c', "Support")
+        _ligne_niveau(d.get('zero_gamma'), '#3498db', "Zero Gamma")
+        _ligne_niveau(d.get('max_pain'), '#f39c12', "Max Pain")
+
+        ax.set_xlabel("Gamma Exposure Net (Millions $ par 1% de mouvement)", color='#f0f0f0', fontsize=10)
+        ax.set_ylabel("Strike ($)", color='#f0f0f0', fontsize=10)
+        ax.set_title("Profil GEX par Strike — Vert = Résistance probable | Rouge = Support probable",
+                     color='#f0f0f0', fontsize=11)
+
+        ax.legend(loc='upper right', fontsize=8, facecolor='#181818', edgecolor='#333333',
+                  labelcolor='#f0f0f0', framealpha=0.95)
+        ax.grid(True, axis='x', color='#181818', linewidth=1.0)
+
+        self.canvas.fig.subplots_adjust(left=0.16, right=0.97, top=0.93, bottom=0.09)
+        self.canvas.draw()
+
+
+# =================================================================================================
 # ============================ CLASSE PRINCIPALE : L'APPLICATION ==================================
 # Interface globale gérant les différentes vues (Accueil, Dashboard, Rapport IA)
 # =================================================================================================
@@ -492,6 +787,13 @@ class ScreenerWindow(QMainWindow):
         """)
         
         layout_sidebar = QVBoxLayout(sidebar)
+
+        # Petit utilitaire pour créer des séparateurs visuels entre les sections de la sidebar
+        def _separateur():
+            ligne = QFrame()
+            ligne.setFrameShape(QFrame.Shape.HLine)
+            ligne.setStyleSheet("background-color: #2A2A2A; max-height: 1px; border: none; margin: 6px 0px;")
+            return ligne
         
         # --- SECTION : INFORMATIONS IA ET PRÉDICTIONS ---
         layout_sidebar.addWidget(QLabel("ANALYSE INTELLIGENCE ARTIFICIELLE"))
@@ -508,6 +810,40 @@ class ScreenerWindow(QMainWindow):
         self.btn_switch_to_ia.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(2))
         layout_sidebar.addWidget(self.btn_switch_to_ia)
         
+        # (À l'intérieur de creer_page_dashboard, sous le bouton btn_switch_to_ia)
+        layout_sidebar.addSpacing(15)
+        layout_sidebar.addWidget(_separateur())
+        
+        layout_sidebar.addWidget(QLabel("MÉCANIQUE OPEX & GEX"))
+
+        self.affichage_gex = QTextBrowser()
+        self.affichage_gex.setReadOnly(True)
+        self.affichage_gex.setMinimumHeight(140)
+        self.affichage_gex.setMaximumHeight(220)
+        self.affichage_gex.setStyleSheet("""
+            QTextBrowser {
+                background-color: #121212; 
+                color: #e0e0e0; 
+                border: 1px solid #333333; 
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        self.affichage_gex.setHtml("<p style='color:#888; font-size:12px;'>Phase actuelle : en attente d'analyse...</p>")
+        layout_sidebar.addWidget(self.affichage_gex)
+
+        self.btn_profil_gex = QPushButton("📊 Voir le Profil GEX (Support / Résistance)")
+        self.btn_profil_gex.setFont(QFont("Google Sans", 10, QFont.Weight.Bold))
+        self.btn_profil_gex.setStyleSheet("""
+            QPushButton { background-color: #2a1f0d; border: 1px solid #f39c12; color: #f39c12; }
+            QPushButton:hover { background-color: #3a2a10; }
+        """)
+        self.btn_profil_gex.clicked.connect(self.ouvrir_fenetre_gex)
+        layout_sidebar.addWidget(self.btn_profil_gex)
+
+        layout_sidebar.addSpacing(10)
+        layout_sidebar.addWidget(_separateur())
+
         # --- SECTION : PERFORMANCES STRATÉGIES ---
         layout_sidebar.addWidget(QLabel("BACKTESTING STRATÉGIES"))
         
@@ -528,6 +864,7 @@ class ScreenerWindow(QMainWindow):
         layout_sidebar.addWidget(self.affichage_perf)
         
         layout_sidebar.addSpacing(15)
+        layout_sidebar.addWidget(_separateur())
         
         # --- SECTION : ACTUALITÉS ET FONDAMENTAL ---
         layout_sidebar.addWidget(QLabel("ACTUALITÉS ET SENTIMENT"))
@@ -552,6 +889,7 @@ class ScreenerWindow(QMainWindow):
         layout_sidebar.addWidget(self.affichage_news)
 
         layout_sidebar.addSpacing(15)
+        layout_sidebar.addWidget(_separateur())
         
         # --- SECTION : CONTRÔLE DES GRAPHIQUES ---
         layout_sidebar.addWidget(QLabel("GRAPHIQUES AFFICHÉS"))
@@ -564,6 +902,17 @@ class ScreenerWindow(QMainWindow):
         self.chk_macd.setChecked(True)
         self.chk_rsi = QCheckBox("RSI (14j)")
         self.chk_rsi.setChecked(True)
+        self.chk_opex = QCheckBox("Phases OpEx (Gamma)")
+        self.chk_opex.setChecked(True)
+        self.chk_opex.setStyleSheet("color: #f39c12; font-weight: bold;")
+        self.chk_opex.stateChanged.connect(self.actualiser_graphiques)
+        layout_sidebar.addWidget(self.chk_opex)
+
+        self.chk_gex_walls = QCheckBox("Murs GEX (Résistance/Support)")
+        self.chk_gex_walls.setChecked(True)
+        self.chk_gex_walls.setStyleSheet("color: #2ecc71; font-weight: bold;")
+        self.chk_gex_walls.stateChanged.connect(self.actualiser_graphiques)
+        layout_sidebar.addWidget(self.chk_gex_walls)
         
         self.chk_prix.stateChanged.connect(self.actualiser_graphiques)
         self.chk_vol.stateChanged.connect(self.actualiser_graphiques)
@@ -576,6 +925,7 @@ class ScreenerWindow(QMainWindow):
         layout_sidebar.addWidget(self.chk_rsi)
         
         layout_sidebar.addSpacing(15)
+        layout_sidebar.addWidget(_separateur())
         
         # --- SECTION : CONTRÔLE DE LA PÉRIODE ---
         layout_sidebar.addWidget(QLabel("PÉRIODE D'ANALYSE"))
@@ -719,7 +1069,6 @@ class ScreenerWindow(QMainWindow):
         self.stacked_widget.setCurrentIndex(0)
         self.input_ticker.setFocus()
 
-
     def lancer_analyse(self):
         
         ticker = self.input_ticker.text().strip().upper()
@@ -743,7 +1092,13 @@ class ScreenerWindow(QMainWindow):
         action.calculer_volatilite_historique(fenetre=20)
         action.calculer_rsi(fenetre=14)
         action.calculer_macd()
-        action.calculer_volume_zscore(fenetre=20) 
+        action.calculer_volume_zscore(fenetre=20)
+        
+        # --- NOUVEAUX APPELS GEX (Avant les stratégies pour qu'elles puissent filtrer) ---
+        action.calculer_calendrier_opex()
+        action.annoter_phases_opex()
+        action.calculer_max_pain()
+        action.calculer_profil_gex()
 
 
         # -----------------------------------------------------------------------------------------
@@ -809,25 +1164,21 @@ class ScreenerWindow(QMainWindow):
         # -----------------------------------------------------------------------------------------
         # ANALYSE FONDAMENTALE (SCRAPING ACTUALITÉS)
         # -----------------------------------------------------------------------------------------
-        # self.label_ia_news.setText("🔍 Analyse Lexicale en cours...")
         QApplication.processEvents() 
         
         try:
             action.analyser_fondamental()
             
-            # Note : on utilise un style plus petit/compact pour la sidebar
             html_content = f"<h4 style='color: #17b978; margin:0;'>Actualités {ticker}</h4><hr style='border-color: #555;'>"
             
             if not action.news:
                 html_content += f"<p style='color: #A0A0A0; font-size: 12px;'> ✅ Aucune actualité récente trouvée.</p>"
             else:
                 for article in action.news:
-                    # Définition de l'émoji en fonction du sentiment
                     emoji = "⚪"
                     if "POSITIF" in article['sentiment']: emoji = "🟢"
                     elif "NÉGATIF" in article['sentiment']: emoji = "🔴"
                     
-                    # Génération d'une seule ligne simple et robuste
                     html_content += f"""
                     <p style="margin-top: 5px; margin-bottom: 5px;">
                         <span style="font-size: 12px;">{emoji}</span>
@@ -838,24 +1189,26 @@ class ScreenerWindow(QMainWindow):
                     <hr style="background-color: #333333; height: 1px; border: none; margin-top: 8px; margin-bottom: 8px;">
                     """
             self.affichage_news.setHtml(html_content)
-            # self.label_ia_news.setText("✅ Analyse Macro terminée.")
             
         except urllib.error.HTTPError as e:
             html_content = f"<h4 style='color: #e74c3c;'>❌ Accès Refusé</h4><hr style='border-color: #555;'>"
             html_content += f"<p style='font-size:12px;'>Rejeté par Yahoo (Erreur HTTP {e.code}).</p>"
             self.affichage_news.setHtml(html_content)
-            self.label_ia_news.setText("❌ Échec : Accès refusé.")
             
         except Exception as e:
             html_content = f"<h4 style='color: #e74c3c;'>❌ Erreur de Connexion</h4><hr style='border-color: #555;'>"
             html_content += f"<p style='font-size:12px;'>Impossible de joindre le serveur.</p>"
             self.affichage_news.setHtml(html_content)
-            self.label_ia_news.setText("❌ Échec de l'analyse macro.")
+
 
         # -----------------------------------------------------------------------------------------
         # FINALISATION ET MISE À JOUR VISUELLE
         # -----------------------------------------------------------------------------------------
         self.df_complet = action.historique.copy()
+        
+        # Sécurité : vérifier que l'objet possède l'attribut avant de le copier
+        if getattr(action, 'df_opex', None) is not None:
+            self.df_opex_courant = action.df_opex.copy()
         
         # 1. Sauvegarde des signaux pour Matplotlib
         self.df_complet['Signal_MA'] = strategies[0].signaux['Signal']
@@ -871,7 +1224,6 @@ class ScreenerWindow(QMainWindow):
         html_perf = f"<h4 style='color: #3498db; margin:0;'>Rendements & Risques (vs B&H)</h4><hr style='border-color: #555;'>"
         for res in resultats:
             couleur = "#27ae60" if res['performance_strategie'] >= 0 else "#e74c3c"
-            # Mise en valeur si notre Max Drawdown est meilleur (plus petit) que le marché
             couleur_dd = "#2ecc71" if res['max_dd_strat'] < res['max_dd_bh'] else "#e0e0e0"
             
             html_perf += f"""
@@ -884,9 +1236,84 @@ class ScreenerWindow(QMainWindow):
             """
         self.affichage_perf.setHtml(html_perf)
 
-        # On appelle le rafraîchissement avec la durée sélectionnée (252 jours par défaut)
+        # 3. --- MISE À JOUR DU PANNEAU GEX AVEC BLACK-SCHOLES ---
+        # On conserve les données brutes sur l'instance pour la fenêtre dédiée et le graphique de prix.
+        self.gex_par_strike_courant       = getattr(action, 'gex_par_strike', {}) or {}
+        self.gex_calls_par_strike_courant = getattr(action, 'gex_calls_par_strike', {}) or {}
+        self.gex_puts_par_strike_courant  = getattr(action, 'gex_puts_par_strike', {}) or {}
+        self.call_wall_courant            = getattr(action, 'call_wall', None)
+        self.put_wall_courant             = getattr(action, 'put_wall', None)
+        self.zero_gamma_courant           = getattr(action, 'zero_gamma_level', None)
+        self.max_pain_courant             = getattr(action, 'max_pain', None)
+        self.spot_price_courant           = getattr(action, 'spot_price', None)
+        self.gex_total_courant            = getattr(action, 'gex_total', None)
+        self.date_expiration_gex_courant  = getattr(action, 'date_expiration_gex', None)
+
+        if 'Phase_OpEx' in action.historique.columns:
+            phase_du_jour = action.historique['Phase_OpEx'].iloc[-1]
+
+            html_gex = f"<p style='margin:0 0 6px 0;'>📅 <b>Cycle :</b> {phase_du_jour}</p>"
+
+            if self.max_pain_courant is not None:
+                html_gex += f"<p style='margin:0 0 6px 0;'>🎯 <b>Max Pain :</b> {self.max_pain_courant:.1f} $</p>"
+
+            if self.gex_total_courant is not None and self.gex_par_strike_courant:
+                gex_m = self.gex_total_courant / 1_000_000
+                couleur_gex = "#27ae60" if self.gex_total_courant > 0 else "#e74c3c"
+                emoji_gex = "🟢" if self.gex_total_courant > 0 else "🔴"
+
+                html_gex += f"<p style='margin:0 0 6px 0;'>{emoji_gex} <b>GEX Total :</b> <span style='color:{couleur_gex};'>{gex_m:,.2f} M$</span></p>"
+                html_gex += f"<p style='margin:0 0 6px 0;'>⚖️ <b>Zero Gamma :</b> {self.zero_gamma_courant:.1f} $</p>"
+
+                if self.call_wall_courant is not None:
+                    html_gex += f"<p style='margin:0 0 6px 0; color:#2ecc71;'>🟩 <b>Résistance (Call Wall) :</b> {self.call_wall_courant:.1f} $</p>"
+                if self.put_wall_courant is not None:
+                    html_gex += f"<p style='margin:0 0 6px 0; color:#e74c3c;'>🟥 <b>Support (Put Wall) :</b> {self.put_wall_courant:.1f} $</p>"
+
+                if self.gex_total_courant > 0:
+                    html_gex += "<p style='margin:6px 0 0 0; font-size:11px; color:#f39c12;'>⚠️ MMs en Contre-Tendance. La volatilité est écrasée.</p>"
+                else:
+                    html_gex += "<p style='margin:6px 0 0 0; font-size:11px; color:#f39c12;'>🚀 MMs en Pro-Tendance. Risque d'accélération directionnelle.</p>"
+            else:
+                html_gex += "<p style='margin:6px 0 0 0; font-size:11px; color:#888;'>Aucune chaîne d'options disponible pour ce ticker.</p>"
+
+            self.affichage_gex.setHtml(html_gex)
+
+        # 4. Dessin final et bascule d'affichage
         self.changer_periode(self.jours_actuels)
         self.stacked_widget.setCurrentIndex(1)
+
+    # ---------------------------------------------------------------------------------------------
+    # OUVERTURE DE LA FENÊTRE DÉDIÉE AU PROFIL GEX (Support / Résistance)
+    # ---------------------------------------------------------------------------------------------
+    def ouvrir_fenetre_gex(self):
+
+        if not getattr(self, 'ticker_actuel', ""):
+            QMessageBox.information(self, "Aucune analyse", "Lance d'abord une analyse sur un ticker.")
+            return
+
+        if not getattr(self, 'gex_par_strike_courant', None):
+            QMessageBox.information(
+                self, "GEX indisponible",
+                f"Aucune chaîne d'options n'est disponible pour {self.ticker_actuel}.\n"
+                "Le profil GEX ne peut pas être calculé pour cet actif."
+            )
+            return
+
+        donnees_gex = {
+            'gex_par_strike': self.gex_par_strike_courant,
+            'spot':           self.spot_price_courant,
+            'max_pain':       self.max_pain_courant,
+            'zero_gamma':     self.zero_gamma_courant,
+            'call_wall':      self.call_wall_courant,
+            'put_wall':       self.put_wall_courant,
+            'gex_total':      self.gex_total_courant,
+            'date_expiration': self.date_expiration_gex_courant,
+        }
+
+        # On garde une référence pour éviter que la fenêtre soit détruite par le garbage collector
+        self._fenetre_gex = FenetreGEX(self.ticker_actuel, donnees_gex, parent=self)
+        self._fenetre_gex.show()
 
     # ---------------------------------------------------------------------------------------------
     # GESTION DES PÉRIODES TEMPORELLES
@@ -1027,6 +1454,81 @@ class ScreenerWindow(QMainWindow):
                 # Flèche rouge au dessus du prix haut
                 ax.scatter(ventes.index, ventes['High'] * 1.04, marker='v', color='#e74c3c', s=120, label='Vente (MA)', zorder=5)
 
+        # On mémorise l'échelle Y "naturelle" du prix avant d'ajouter les repères GEX,
+        # afin de ne jamais déformer le graphique si un mur se trouve loin du prix actuel.
+        y_min_prix, y_max_prix = ax.get_ylim()
+
+        if hasattr(self, 'chk_opex') and self.chk_opex.isChecked() and hasattr(self, 'df_opex_courant'):
+            
+            # Variables pour éviter de dupliquer la légende 100 fois
+            legende_p1_ajoutee = False
+            legende_p2_ajoutee = False
+            
+            for _, row in self.df_opex_courant.iterrows():
+                opex_date = row['OpEx_Date']
+                is_quad = row['Is_Quad_Witching']
+                
+                # On ne dessine que si l'OpEx est proche des dates affichées sur le graph
+                if opex_date < df.index[0] - pd.Timedelta(days=15) or opex_date > df.index[-1] + pd.Timedelta(days=15):
+                    continue
+                
+                # Phase 1 : Max Pain (Aimant) -> J-7 à Jour J
+                phase1_start = opex_date - pd.Timedelta(days=7)
+                
+                # Phase 2 : Shakeout (Directionnel) -> Jour J à J+7
+                phase2_end = opex_date + pd.Timedelta(days=7)
+                
+                # Couleurs : Plus intenses si c'est les 4 Sorcières (Quad Witching)
+                color_p1 = '#e67e22' if is_quad else '#f1c40f' # Orange / Jaune
+                color_p2 = '#8e44ad' if is_quad else '#3498db' # Violet / Bleu
+                alpha_val = 0.2 if is_quad else 0.1
+                
+                # 1. Dessiner la zone de Compression (Max Pain)
+                label_p1 = "Phase 1: Compression (GEX+)" if not legende_p1_ajoutee else ""
+                ax.axvspan(phase1_start, opex_date, color=color_p1, alpha=alpha_val, lw=0, label=label_p1)
+                legende_p1_ajoutee = True
+                
+                # 2. Dessiner la zone de Libération (Shakeout)
+                label_p2 = "Phase 2: Shakeout (GEX-)" if not legende_p2_ajoutee else ""
+                ax.axvspan(opex_date, phase2_end, color=color_p2, alpha=alpha_val, lw=0, label=label_p2)
+                legende_p2_ajoutee = True
+                
+                # 3. La ligne rouge exacte du 3ème vendredi (OpEx)
+                ax.axvline(opex_date, color='#e74c3c', linestyle=':', linewidth=1.5, alpha=0.8)
+
+        # --- REPÈRES DE RÉSISTANCE / SUPPORT ISSUS DU PROFIL GEX ---
+        if hasattr(self, 'chk_gex_walls') and self.chk_gex_walls.isChecked():
+
+            call_wall  = getattr(self, 'call_wall_courant', None)
+            put_wall   = getattr(self, 'put_wall_courant', None)
+            zero_gamma = getattr(self, 'zero_gamma_courant', None)
+            max_pain   = getattr(self, 'max_pain_courant', None)
+
+            if call_wall is not None:
+                ax.axhline(call_wall, color='#2ecc71', linestyle='--', linewidth=1.6, alpha=0.85, zorder=4,
+                          label=f"Résistance (Call Wall) : {call_wall:.1f} $")
+            if put_wall is not None:
+                ax.axhline(put_wall, color='#e74c3c', linestyle='--', linewidth=1.6, alpha=0.85, zorder=4,
+                          label=f"Support (Put Wall) : {put_wall:.1f} $")
+            if zero_gamma is not None:
+                ax.axhline(zero_gamma, color='#3498db', linestyle=':', linewidth=1.4, alpha=0.7, zorder=4,
+                          label=f"Zero Gamma : {zero_gamma:.1f} $")
+            if max_pain is not None:
+                ax.axhline(max_pain, color='#f39c12', linestyle=':', linewidth=1.4, alpha=0.6, zorder=4,
+                          label=f"Max Pain : {max_pain:.1f} $")
+
+            # On élargit légèrement l'échelle si un niveau est proche du prix, mais on l'empêche
+            # de partir trop loin si un mur se trouve à un strike éloigné (lisibilité du chandelier).
+            niveaux = [v for v in [call_wall, put_wall, zero_gamma, max_pain] if v is not None]
+            marge_prix = (y_max_prix - y_min_prix) * 0.6
+            for niveau in niveaux:
+                if y_min_prix - marge_prix <= niveau <= y_max_prix + marge_prix:
+                    y_min_prix = min(y_min_prix, niveau)
+                    y_max_prix = max(y_max_prix, niveau)
+
+            padding = (y_max_prix - y_min_prix) * 0.05
+            ax.set_ylim(y_min_prix - padding, y_max_prix + padding)
+
         ax.set_ylabel("Prix ($)", color="#f0f0f0", fontdict=self.police_axes)
         ax.legend(
             loc="upper left", 
@@ -1034,7 +1536,8 @@ class ScreenerWindow(QMainWindow):
             labelcolor="#f0f0f0", 
             facecolor='#181818',  # La couleur de la plaque (ici le gris très foncé de ton fond)
             edgecolor='#181818',  # La couleur de la bordure de la plaque
-            framealpha=1.0        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            framealpha=1.0,        # Légère transparence (1 = 100% opaque, 0 = 100% transparent)
+            fontsize=8
             )
         ax.grid(True, color='#181818', linewidth=1.0)
 

@@ -1,8 +1,11 @@
 import pandas as pd
 from pathlib import Path 
 import numpy as np 
+from scipy.stats import norm 
+
 from algos_IA import Regression_Ridge, AnalyseurNews
 from gestion_donnees import telecharger_historique
+import yfinance as yf
 
 class ActifFinancier: 
     def __init__(self, ticker):
@@ -15,20 +18,21 @@ class ActifFinancier:
         self.sigma = None
         self.news=[]
         self.hit_ratio = 0.0
+        self.df_opex = None
 
     def charger_donnees(self):
         dossier = Path(__file__).parent
         chemin_fichier = dossier / f"{self.ticker}.csv"
         
-        # Si le fichier n'existe pas, on tente de le télécharger
-        if not chemin_fichier.exists():
-            succes_telechargement = telecharger_historique(self.ticker)
+        # 1. On tente de télécharger les données les plus récentes
+        succes_telechargement = telecharger_historique(self.ticker)
+        
+        # 2. Si le téléchargement échoue (pas de wifi, erreur Yahoo) ET qu'on n'a pas d'ancien fichier en cache
+        if not succes_telechargement and not chemin_fichier.exists():
+            print(f"Impossible de récupérer les données pour {self.ticker}.")
+            return False 
             
-            # SI LE TÉLÉCHARGEMENT ÉCHOUE, ON S'ARRÊTE ICI ET ON RENVOIE FALSE
-            if not succes_telechargement:
-                return False 
-            
-        # Si on arrive ici, c'est que le fichier existe (ou a été téléchargé avec succès)
+        # 3. On lit le fichier (soit la version fraîchement téléchargée, soit l'ancienne version de secours)
         try:
             self.historique = pd.read_csv(chemin_fichier, index_col='Date', parse_dates=True)
             return True
@@ -221,7 +225,7 @@ class ActifFinancier:
             # 2. La cible (Target) : On remonte le rendement de DEMAIN sur la ligne d'aujourd'hui
             df['Target_Ret'] = df['Rendements'].shift(-1)
             
-            # 3. Le coup de balai
+            # 3. On ne garde que les colonnes utiles pour l'IA et on supprime les lignes avec des NaN
             colonnes_utiles = self.features_list + ['Target_Ret']
             data_propre = df[colonnes_utiles].dropna()
             
@@ -353,6 +357,223 @@ class ActifFinancier:
         self.news = analyseur.scraper_news_yahoo(self.ticker)
         return self.news
     
+    def calculer_calendrier_opex(self):
+        """
+        Génère le calendrier des expirations d'options (OpEx) et 
+        des Quad Witching pour l'actif en cours.
+        """
+        if self.historique is None or self.historique.empty:
+            return
+            
+        start_date = self.historique.index[0]
+        # On va un peu plus loin dans le futur pour attraper le prochain OpEx
+        end_date = self.historique.index[-1] + pd.Timedelta(days=30) 
+        
+        # Trouver tous les 3èmes vendredis du mois
+        opex_dates = pd.date_range(start_date, end_date, freq='WOM-3FRI')
+        df_opex = pd.DataFrame({'OpEx_Date': opex_dates})
+        
+        # Identifier les 4 Sorcières (Quad Witching = Mars, Juin, Septembre, Décembre)
+        df_opex['Is_Quad_Witching'] = df_opex['OpEx_Date'].dt.month.isin([3, 6, 9, 12])
+        
+        self.df_opex = df_opex
+        print(f"Calendrier OpEx calculé pour {self.ticker}.")
+
+    def annoter_phases_opex(self):
+        """
+        Catégorise chaque jour de l'historique en Phase 1 (Aimant), Phase 2 (Directionnel), ou Normal.
+        Indispensable pour backtester les filtres GEX.
+        """
+        if self.historique is None or getattr(self, 'df_opex', None) is None:
+            return
+            
+        self.historique['Phase_OpEx'] = 'Normal'
+        
+        for _, row in self.df_opex.iterrows():
+            opex_date = pd.to_datetime(row['OpEx_Date']).tz_localize(None)
+            
+            # Phase 1 : J-7 à J (Compression)
+            start_p1 = opex_date - pd.Timedelta(days=7)
+            mask_p1 = (self.historique.index >= start_p1) & (self.historique.index <= opex_date)
+            self.historique.loc[mask_p1, 'Phase_OpEx'] = 'Phase 1'
+            
+            # Phase 2 : J à J+7 (Shakeout / Libération)
+            end_p2 = opex_date + pd.Timedelta(days=7)
+            mask_p2 = (self.historique.index > opex_date) & (self.historique.index <= end_p2)
+            self.historique.loc[mask_p2, 'Phase_OpEx'] = 'Phase 2'
+            
+        print(f"Phases OpEx annotées sur l'historique de {self.ticker}.")
+
+    def calculer_max_pain(self):
+        """
+        Scrape la chaîne d'options la plus proche via yfinance et calcule le Max Pain Strike.
+        """
+        import yfinance as yf
+        self.max_pain = None
+        self.expiration_proche = None
+        
+        try:
+            tk = yf.Ticker(self.ticker)
+            dates = tk.options
+            
+            if not dates:
+                print(f"Aucune chaîne d'options trouvée pour {self.ticker}.")
+                return
+                
+            self.expiration_proche = dates[0]
+            opt = tk.option_chain(self.expiration_proche)
+            calls, puts = opt.calls, opt.puts
+            
+            # Liste de tous les strikes disponibles
+            strikes = sorted(list(set(calls['strike'].tolist() + puts['strike'].tolist())))
+            min_pain = float('inf')
+            
+            for strike in strikes:
+                pain = 0
+                # Valeur intrinsèque perdue par les acheteurs de Calls
+                call_itm = calls[calls['strike'] < strike]
+                pain += sum((strike - call_itm['strike']) * call_itm['openInterest'])
+                
+                # Valeur intrinsèque perdue par les acheteurs de Puts
+                put_itm = puts[puts['strike'] > strike]
+                pain += sum((put_itm['strike'] - strike) * put_itm['openInterest'])
+                
+                if pain < min_pain:
+                    min_pain = pain
+                    self.max_pain = strike
+                    
+            print(f"Max Pain trouvé pour {self.ticker} ({self.expiration_proche}) : {self.max_pain}$")
+            
+        except Exception as e:
+            print(f"Erreur lors du calcul du Max Pain : {e}")
+
+    def _calculer_gamma_bsm(self, S, K, T, r, sigma):
+        """
+        Calcule le Gamma d'une option via la formule de Black-Scholes.
+        """
+        # Sécurité : éviter la division par zéro si l'option expire aujourd'hui ou si l'IV est nulle
+        if T <= 0 or sigma <= 0 or S <= 0:
+            return 0.0
+            
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        
+        # norm.pdf est la dérivée de la fonction de répartition (N')
+        gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
+        return gamma
+
+    def calculer_profil_gex(self):
+        """
+        Télécharge la chaîne d'options, calcule le Gamma de chaque Strike via Black-Scholes,
+        et agrège le Dollar GEX total ainsi que le niveau Zero Gamma.
+
+        Calcule également séparément le GEX des Calls et des Puts afin d'identifier :
+          - Le Call Wall  (Résistance) : strike où le Gamma des Calls est le plus concentré.
+          - Le Put Wall   (Support)    : strike où le Gamma des Puts est le plus concentré.
+        Ces deux niveaux servent de base à la fenêtre d'analyse GEX (voir app.py).
+        """
+        print(f"Calcul du profil GEX (Black-Scholes) pour {self.ticker}...")
+        
+        self.gex_total = 0.0
+        self.zero_gamma_level = None
+        self.gex_par_strike = {}        # GEX net (Calls + Puts) par strike
+        self.gex_calls_par_strike = {}  # GEX des seuls Calls par strike (toujours >= 0)
+        self.gex_puts_par_strike = {}   # GEX des seuls Puts par strike (toujours <= 0)
+        self.call_wall = None           # Résistance probable (concentration de Gamma Calls)
+        self.put_wall = None            # Support probable (concentration de Gamma Puts)
+        self.spot_price = self.get_dernier_prix()
+        self.date_expiration_gex = None
+        
+        try:
+            tk = yf.Ticker(self.ticker)
+            dates = tk.options
+            
+            if not dates:
+                return
+                
+            # Pour l'exemple, on prend la prochaine expiration (OpEx le plus proche)
+            # Dans un algo pro, on boucle souvent sur toutes les expirations des 30 prochains jours.
+            date_exp = dates[0]
+            opt = tk.option_chain(date_exp)
+            self.date_expiration_gex = date_exp
+            
+            S = self.get_dernier_prix()
+            if S == 0:
+                return
+            self.spot_price = S
+                
+            # Temps jusqu'à l'expiration en années (T)
+            date_exp_dt = pd.to_datetime(date_exp).tz_localize(None)
+            aujourd_hui = pd.Timestamp.now().tz_localize(None)
+            jours_restants = (date_exp_dt - aujourd_hui).days
+            T = max(jours_restants / 365.25, 0.001) # Minimum 1/1000e d'année
+            
+            r = 0.04  # Taux sans risque arbitraire à 4% (T-Bills)
+            
+            calls = opt.calls
+            puts = opt.puts
+            
+            # --- CALCUL DU GEX DES CALLS ---
+            # Convention : On suppose les MM short sur les Calls (investisseurs longs) -> GEX Positif
+            for _, row in calls.iterrows():
+                K = row['strike']
+                sigma = row['impliedVolatility']
+                oi = row['openInterest']
+                
+                gamma = self._calculer_gamma_bsm(S, K, T, r, sigma)
+                # Dollar Gamma = Gamma * Open Interest * 100 actions par contrat * Spot Price^2 / 100 (pour 1% de mouvement)
+                # Formule simplifiée standardisée : Gamma * OI * 100
+                gex = gamma * oi * 100
+                
+                self.gex_par_strike[K] = self.gex_par_strike.get(K, 0) + gex
+                self.gex_calls_par_strike[K] = self.gex_calls_par_strike.get(K, 0) + gex
+                self.gex_total += gex
+                
+            # --- CALCUL DU GEX DES PUTS ---
+            # Convention : On suppose les MM short sur les Puts (investisseurs longs pour se couvrir) -> GEX Négatif
+            for _, row in puts.iterrows():
+                K = row['strike']
+                sigma = row['impliedVolatility']
+                oi = row['openInterest']
+                
+                gamma = self._calculer_gamma_bsm(S, K, T, r, sigma)
+                gex = -(gamma * oi * 100) # Négatif car les MM vendent pour se couvrir à la baisse
+                
+                self.gex_par_strike[K] = self.gex_par_strike.get(K, 0) + gex
+                self.gex_puts_par_strike[K] = self.gex_puts_par_strike.get(K, 0) + gex
+                self.gex_total += gex
+            
+            # --- RECHERCHE DU NIVEAU ZERO GAMMA ---
+            # C'est le Strike où le GEX cumulé (Calls vs Puts) s'inverse.
+            strikes = sorted(self.gex_par_strike.keys())
+            gex_cumule = 0
+            for strike in strikes:
+                gex_cumule += self.gex_par_strike[strike]
+                # Si le cumul passe de négatif à positif (ou s'approche de zéro dans un flux de Puts dominant)
+                if gex_cumule >= 0 and self.zero_gamma_level is None:
+                    self.zero_gamma_level = strike
+            
+            # Si le profil est entièrement négatif ou positif, on fallback sur le prix actuel
+            if self.zero_gamma_level is None:
+                self.zero_gamma_level = S
+
+            # --- RECHERCHE DU CALL WALL (RÉSISTANCE) ---
+            # Strike où la concentration de Gamma des Calls est maximale : 
+            # les Market Makers, longs Gamma, vendent les hausses pour rester neutres -> freine le prix.
+            if self.gex_calls_par_strike:
+                self.call_wall = max(self.gex_calls_par_strike, key=self.gex_calls_par_strike.get)
+
+            # --- RECHERCHE DU PUT WALL (SUPPORT) ---
+            # Strike où la concentration de Gamma des Puts est maximale (valeur la plus négative) :
+            # les Market Makers achètent les baisses pour se couvrir -> amortit la chute.
+            if self.gex_puts_par_strike:
+                self.put_wall = min(self.gex_puts_par_strike, key=self.gex_puts_par_strike.get)
+
+            print(f"GEX Total : {self.gex_total:,.0f} | Zero Gamma : {self.zero_gamma_level}$ "
+                  f"| Résistance (Call Wall) : {self.call_wall}$ | Support (Put Wall) : {self.put_wall}$")
+            
+        except Exception as e:
+            print(f"Erreur lors du calcul Black-Scholes GEX : {e}")
+    
     
 # --- TEST DU MODULE ---
 if __name__ == "__main__":
@@ -375,4 +596,3 @@ if __name__ == "__main__":
         # 2. Entraînement de l'IA (va afficher les stats R2, MAE, Hit Ratio)
         action.entrainer_IA()
         action.predire_demain()
-        

@@ -238,27 +238,20 @@ class StrategieRSI(Strategie):
 
     def generer_signaux(self, df: pd.DataFrame) -> pd.DataFrame:
         df_s = df.copy()
-
-        # Réutilise la colonne RSI si déjà calculée dans l'ActifFinancier
         rsi = df_s['RSI'] if 'RSI' in df_s.columns else self._calculer_rsi(df_s['Close'])
-
         df_s['Signal'] = 0
 
-        # Sortie de survente (RSI repasse au-dessus du seuil bas)
-        df_s.loc[
-            (rsi >= self.seuil_survente) & (rsi.shift(1) < self.seuil_survente),
-            'Signal'
-        ] = 1
+        # Signaux standards de base
+        df_s.loc[(rsi >= self.seuil_survente) & (rsi.shift(1) < self.seuil_survente), 'Signal'] = 1
+        df_s.loc[(rsi <= self.seuil_surachat) & (rsi.shift(1) > self.seuil_surachat), 'Signal'] = -1
 
-        # Sortie de surachat (RSI repasse en-dessous du seuil haut)
-        df_s.loc[
-            (rsi <= self.seuil_surachat) & (rsi.shift(1) > self.seuil_surachat),
-            'Signal'
-        ] = -1
+        # FILTRE GEX (Règle B) : On écrase les signaux Mean Reversion en Phase 2 (Directionnel)
+        if 'Phase_OpEx' in df_s.columns:
+            df_s.loc[df_s['Phase_OpEx'] == 'Phase 2', 'Signal'] = 0
 
         self.signaux = df_s[['Signal']]
         return self.signaux
-
+    
     def decrire(self) -> str:
         return (
             f"[{self.nom}] Achat quand RSI remonte au-dessus de {self.seuil_survente} "
@@ -284,33 +277,23 @@ class StrategieMACD(Strategie):
 
     def generer_signaux(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
-            print(
-                "  [StrategieMACD] Erreur : colonnes MACD / MACD_signal absentes. "
-                "Appelez calculer_macd() avant d'utiliser cette stratégie."
-            )
             self.signaux = pd.DataFrame({'Signal': [0] * len(df)}, index=df.index)
             return self.signaux
 
         df_s = df.copy()
         df_s['Signal'] = 0
 
-        # Croisement haussier : MACD passe au-dessus de sa ligne signal
-        df_s.loc[
-            (df_s['MACD'] >  df_s['MACD_signal']) &
-            (df_s['MACD'].shift(1) <= df_s['MACD_signal'].shift(1)),
-            'Signal'
-        ] = 1
+        # Signaux standards de base
+        df_s.loc[(df_s['MACD'] > df_s['MACD_signal']) & (df_s['MACD'].shift(1) <= df_s['MACD_signal'].shift(1)), 'Signal'] = 1
+        df_s.loc[(df_s['MACD'] < df_s['MACD_signal']) & (df_s['MACD'].shift(1) >= df_s['MACD_signal'].shift(1)), 'Signal'] = -1
 
-        # Croisement baissier : MACD passe en-dessous de sa ligne signal
-        df_s.loc[
-            (df_s['MACD'] <  df_s['MACD_signal']) &
-            (df_s['MACD'].shift(1) >= df_s['MACD_signal'].shift(1)),
-            'Signal'
-        ] = -1
+        # FILTRE GEX (Règle A) : On écrase les signaux Breakout/Momentum en Phase 1 (Aimant)
+        if 'Phase_OpEx' in df_s.columns:
+            df_s.loc[df_s['Phase_OpEx'] == 'Phase 1', 'Signal'] = 0
 
         self.signaux = df_s[['Signal']]
         return self.signaux
-
+    
     def decrire(self) -> str:
         return (
             "[MACD (12/26/9)] Achat sur croisement haussier MACD/Signal "
